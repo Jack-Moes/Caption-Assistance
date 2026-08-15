@@ -1,0 +1,29 @@
+How to Run Caption assistance
+=============================
+
+1. Double-click Run-Caption assistance-Local.cmd.
+2. When Windows Live Captions opens, allow microphone access.
+3. Install the Chrome extension below only if you want to use automatic input and sending with ChatGPT.
+
+Install or Update the Chrome Extension
+--------------------------------------
+
+1. Enter chrome://extensions in the Chrome address bar.
+2. Enable Developer mode in the upper-right corner.
+3. For a first-time installation, click "Load unpacked" and select the extension folder in this directory.
+4. If it is already installed, click the Reload button on the Caption assistance Bridge card.
+5. Press F5 once on any ChatGPT page that was already open.
+
+Network and Privacy
+-------------------
+
+- The app does not send the PC name, Windows username, local IP address, or distribution ID to an external deployment-verification server.
+- The app and Chrome extension communicate only through the local address 127.0.0.1:17632 on this PC.
+- The permitted local network range is 192.168.5.*.
+
+Folder Descriptions
+-------------------
+
+- Caption assistance-1.0.2-local: Contains the application used at runtime. The app will not run if this folder is deleted.
+- extension: Contains the Chrome extension used for automatic ChatGPT input and sending.
+- local-patch: Contains modified source files and rebuild resources. It is not required at runtime, but should be retained for future changes.
