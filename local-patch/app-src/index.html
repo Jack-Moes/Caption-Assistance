@@ -17,10 +17,12 @@
     <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
     <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 9"/></symbol>
     <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
     <symbol id="i-mic-off" viewBox="0 0 24 24"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15"/></symbol>
     <symbol id="i-chat" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="13" rx="2.5"/><line x1="7" y1="10" x2="17" y2="10"/><line x1="7" y1="13.5" x2="13" y2="13.5"/></symbol>
     <symbol id="i-code" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></symbol>
     <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></symbol>
@@ -52,6 +54,10 @@
     <header class="bar drag">
       <div class="spacer"></div>
       <div class="winbtns nodrag">
+        <span class="bar-conn" data-global-conn title="ChatGPT bridge connection">● no bridge</span>
+        <button class="wb privacy-trigger" data-pop="privacyPop" title="Privacy overlay"><svg class="ic"><use href="#i-shield"/></svg></button>
+        <button class="wb" data-pop="opacityPop" title="Window opacity &amp; keep-on-top"><svg class="ic"><use href="#i-eye"/></svg></button>
+        <button class="wb" data-pop="settingsPop" title="Audio, ChatGPT actions &amp; hotkeys"><svg class="ic"><use href="#i-gear"/></svg></button>
         <button class="wb act-help" title="About"><svg class="ic"><use href="#i-help"/></svg></button>
         <button class="wb" id="min1" title="Minimise"><svg class="ic"><use href="#i-min"/></svg></button>
         <button class="wb wclose" id="close1" title="Close"><svg class="ic"><use href="#i-close"/></svg></button>
@@ -89,6 +95,10 @@
     <header class="bar drag">
       <div class="spacer"></div>
       <div class="winbtns nodrag">
+        <span class="bar-conn" data-global-conn title="ChatGPT bridge connection">● no bridge</span>
+        <button class="wb privacy-trigger" data-pop="privacyPop" title="Privacy overlay"><svg class="ic"><use href="#i-shield"/></svg></button>
+        <button class="wb" data-pop="opacityPop" title="Window opacity &amp; keep-on-top"><svg class="ic"><use href="#i-eye"/></svg></button>
+        <button class="wb" data-pop="settingsPop" title="Audio, ChatGPT actions &amp; hotkeys"><svg class="ic"><use href="#i-gear"/></svg></button>
         <button class="wb act-help" title="About"><svg class="ic"><use href="#i-help"/></svg></button>
         <button class="wb" id="min2" title="Minimise"><svg class="ic"><use href="#i-min"/></svg></button>
         <button class="wb wclose" id="close2" title="Close"><svg class="ic"><use href="#i-close"/></svg></button>
@@ -144,6 +154,10 @@
     <header class="bar drag">
       <div class="spacer"></div>
       <div class="winbtns nodrag">
+        <span class="bar-conn" data-global-conn title="ChatGPT bridge connection">● no bridge</span>
+        <button class="wb privacy-trigger" data-pop="privacyPop" title="Privacy overlay"><svg class="ic"><use href="#i-shield"/></svg></button>
+        <button class="wb" data-pop="opacityPop" title="Window opacity &amp; keep-on-top"><svg class="ic"><use href="#i-eye"/></svg></button>
+        <button class="wb" data-pop="settingsPop" title="Audio, ChatGPT actions &amp; hotkeys"><svg class="ic"><use href="#i-gear"/></svg></button>
         <button class="wb act-help" title="About"><svg class="ic"><use href="#i-help"/></svg></button>
         <button class="wb" id="min4" title="Minimise"><svg class="ic"><use href="#i-min"/></svg></button>
         <button class="wb wclose" id="close4" title="Close"><svg class="ic"><use href="#i-close"/></svg></button>
@@ -158,7 +172,7 @@
       <div class="prompts-main">
         <div class="prompts-head">
           <h2>Default prompts</h2>
-          <p>Paste one into a fresh ChatGPT chat (with the job description + your resume) to prime the session, then use the aa / ss / zz buttons during the interview.</p>
+          <p>Choose the prompt for your interview mode, then paste it into a fresh ChatGPT chat with the job description and your resume. Live Coding supports aa / ss / plan / code / improve / edge / O(n).</p>
         </div>
         <div class="prompt-tabs" id="promptTabs"></div>
         <div class="prompt-box">
@@ -168,7 +182,6 @@
               <button class="hk" id="promptEdit">Edit</button>
               <button class="hk prompt-save hidden" id="promptSave">Save</button>
               <button class="hk hidden" id="promptCancel">Cancel</button>
-              <button class="hk" id="promptReset" title="Restore the bundled prompt">Reset</button>
               <button class="hk" id="promptCopy">Copy</button>
             </div>
           </div>
@@ -190,8 +203,10 @@
         <button class="wb" id="srcBtn" title="Audio shown: Speaker / You / Both"><svg class="ic"><use href="#i-speaker" id="srcUse"/></svg></button>
         <button class="wb" id="scrollBtn" title="GPT auto scroll (read-along)"><svg class="ic"><use href="#i-readalong"/></svg></button>
         <button class="wb" id="markBtn" title="Save transcript"><svg class="ic"><use href="#i-bookmark"/></svg></button>
-        <button class="wb" id="dimBtn" title="Live Captions opacity, window opacity &amp; keep-on-top"><svg class="ic"><use href="#i-eye"/></svg></button>
-        <button class="wb" id="settingsBtn" title="Hotkeys &amp; settings"><svg class="ic"><use href="#i-gear"/></svg></button>
+        <button class="wb answer-mode" id="answerModeBtn" type="button" aria-pressed="false" title="Answer in app: OFF — show replies in the ChatGPT tab"><svg class="ic"><use href="#i-chat"/></svg><span class="answer-mode-dot"></span></button>
+        <button class="wb privacy-trigger" data-pop="privacyPop" title="Privacy overlay"><svg class="ic"><use href="#i-shield"/></svg></button>
+        <button class="wb" id="dimBtn" data-pop="opacityPop" title="Live Captions opacity, window opacity &amp; keep-on-top"><svg class="ic"><use href="#i-eye"/></svg></button>
+        <button class="wb" id="settingsBtn" data-pop="settingsPop" title="Audio, ChatGPT actions &amp; hotkeys"><svg class="ic"><use href="#i-gear"/></svg></button>
         <button class="wb" id="helpBtn" title="About"><svg class="ic"><use href="#i-help"/></svg></button>
         <button class="end wb-end" id="endBtn" title="End session"><svg class="ic sq"><use href="#i-stop"/></svg></button>
         <button class="wb" id="min3" title="Minimise"><svg class="ic"><use href="#i-min"/></svg></button>
@@ -207,6 +222,16 @@
     <div class="caption-wrap">
       <div class="caption" id="caption"></div>
       <div class="minimap" id="minimap"><div class="mini-content" id="miniContent"></div><div class="mini-sel" id="miniSel"></div><div class="mini-view" id="miniView"></div></div>
+      <div class="gpt-answer-view hidden" id="gptAnswerView">
+        <div class="gpt-answer-head">
+          <div><b>GPT Answer</b><span class="gpt-answer-status" id="gptAnswerStatus">Ready</span></div>
+          <div class="gpt-answer-actions">
+            <button class="answer-copy answer-refresh" id="answerRefreshBtn" type="button" title="Recover the current request without sending a duplicate"><svg class="ic"><use href="#i-refresh"/></svg>Refresh</button>
+            <button class="answer-copy" id="answerCopyBtn" type="button" title="Copy the current GPT answer"><svg class="ic"><use href="#i-copy" id="answerCopyUse"/></svg>Copy</button>
+          </div>
+        </div>
+        <pre class="gpt-answer-text empty" id="gptAnswerText">Select an interview question, then press Send or another answer button.</pre>
+      </div>
     </div>
     <div class="replay-bar hidden" id="replayBar">
       <button class="rp-btn rp-play" id="rpPlay" title="Play / Pause (Space)">&#9654;</button>
@@ -237,11 +262,11 @@
       <div class="coding-btns">
         <button class="ghost gkey" id="aaCodeBtn" title="Send your &quot;aa&quot; keyword + the selection to ChatGPT">aa</button>
         <button class="ghost gkey" id="ssCodeBtn" title="Send your &quot;ss&quot; keyword + the selection (simple 3-4 sentence answer)">ss</button>
-        <button class="ghost gkey code-btn" data-cmd="1" title="Explain / plan the approach aloud  (F1)">plan</button>
-        <button class="ghost gkey code-btn" data-cmd="2" title="Write the code  (F2)">code</button>
-        <button class="ghost gkey code-btn" data-cmd="3" title="Suggest improvements  (F3)">improve</button>
-        <button class="ghost gkey code-btn" data-cmd="4" title="Edge cases  (F4)">edge</button>
-        <button class="ghost gkey code-btn" data-cmd="5" title="Time &amp; space complexity  (F5)">O(n)</button>
+        <button class="ghost gkey code-btn" id="planBtn" data-cmd="1" title="Send command 1 + the selected problem: explain / plan  (F1)">plan</button>
+        <button class="ghost gkey code-btn" id="codeBtn" data-cmd="2" title="Send command 2 + the selected problem: write code  (F2)">code</button>
+        <button class="ghost gkey code-btn" id="improveBtn" data-cmd="3" title="Send command 3 + the selection: improve the solution  (F3)">improve</button>
+        <button class="ghost gkey code-btn" id="edgeBtn" data-cmd="4" title="Send command 4 + the selection: find edge cases  (F4)">edge</button>
+        <button class="ghost gkey code-btn" id="complexityBtn" data-cmd="5" title="Send command 5 + the selection: analyze complexity  (F5)">O(n)</button>
       </div>
     </div>
     <div id="popBackdrop" class="pop-backdrop hidden"></div>
@@ -251,7 +276,7 @@
       <button class="src-opt" data-src="both"><svg class="ic"><use href="#i-speaker"/></svg><span>Speaker + Mic<em>both, in one timeline</em></span></button>
     </div>
     <div id="opacityPop" class="opacity-pop hidden">
-      <div class="op-row">
+      <div class="op-row" id="lcOpacityRow">
         <div class="op-title">Original Live Captions opacity</div>
         <input id="opacitySlider" type="range" min="0" max="100" value="0" />
         <div class="op-val"><span id="opacityVal">0%</span></div>
@@ -266,12 +291,27 @@
         <label class="switch"><input id="topToggle" type="checkbox" /><span class="slider-sw"></span></label>
       </div>
     </div>
-    <div id="settingsPop" class="opacity-pop settings-pop hidden">
-      <div class="op-row op-toggle" style="border-top:none; margin-top:0; padding-top:0">
-        <span class="op-title" style="margin:0">Stealth mode</span>
-        <label class="switch"><input id="stealthToggle" type="checkbox" /><span class="slider-sw"></span></label>
+    <div id="privacyPop" class="opacity-pop privacy-pop hidden">
+      <div class="privacy-card">
+        <div class="privacy-head">
+          <div>
+            <div class="privacy-title">Privacy overlay</div>
+            <div class="privacy-sub">Private window controls with safe recovery keys</div>
+          </div>
+          <label class="switch"><input id="privacyEnabled" type="checkbox" /><span class="slider-sw"></span></label>
+        </div>
+        <div id="privacyOptions" class="privacy-options is-disabled">
+          <label class="privacy-option"><span><b>Capture protection</b><small>Exclude this window from supported screen capture</small></span><input id="privacyCapture" type="checkbox" /></label>
+          <label class="privacy-option"><span><b>Click-through</b><small>Mouse clicks pass through; use the recovery key to exit</small></span><input id="privacyClick" type="checkbox" /></label>
+          <div class="privacy-shortcuts">
+            <div class="set-row"><span class="set-lbl">Click-through on / off</span><button class="hk privacy-hk" id="hkPrivacyClick" data-pact="click">Ctrl+Shift+X</button></div>
+          </div>
+        </div>
+        <div id="privacyStatus" class="privacy-status">Privacy overlay is off.</div>
       </div>
-      <div class="op-row" style="margin-top:12px; padding-bottom:13px; border-bottom:1px solid var(--border)">
+    </div>
+    <div id="settingsPop" class="opacity-pop settings-pop hidden">
+      <div class="op-row" style="margin-top:0; padding-bottom:13px; border-bottom:1px solid var(--border)">
         <div class="op-title" style="margin:0 0 6px">Transcription engines</div>
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
           <span style="flex:0 0 52px; font-size:11px; opacity:.65; display:flex; align-items:center; gap:4px;"><svg class="ic" style="width:14px;height:14px"><use href="#i-speaker"/></svg>Speaker</span>
@@ -330,11 +370,11 @@
         <div class="op-title" style="margin:0 0 6px">GPT auto scroll position</div>
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
           <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; opacity:.85;">Scroll up at
-            <input id="scrollTrigInput" type="number" min="25" max="95" step="1" value="57" style="width:52px; font-size:11.5px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; background:#fff; color:var(--text); -webkit-app-region:no-drag;" />%</label>
+            <input id="scrollTrigInput" class="scroll-number" type="number" min="25" max="95" step="1" value="57" style="width:52px; font-size:11.5px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; -webkit-app-region:no-drag;" />%</label>
           <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; opacity:.85;">scroll to
-            <input id="scrollTargetInput" type="number" min="10" max="90" step="1" value="35" style="width:52px; font-size:11.5px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; background:#fff; color:var(--text); -webkit-app-region:no-drag;" />%</label>
+            <input id="scrollTargetInput" class="scroll-number" type="number" min="10" max="90" step="1" value="35" style="width:52px; font-size:11.5px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; -webkit-app-region:no-drag;" />%</label>
           <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; opacity:.85;">speed
-            <input id="scrollSpeedInput" type="number" min="0.3" max="4" step="0.1" value="1.5" style="width:52px; font-size:11.5px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; background:#fff; color:var(--text); -webkit-app-region:no-drag;" />&#215;</label>
+            <input id="scrollSpeedInput" class="scroll-number" type="number" min="0.3" max="4" step="0.1" value="1.5" style="width:52px; font-size:11.5px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; -webkit-app-region:no-drag;" />&#215;</label>
         </div>
         <div class="help-note" style="opacity:.55; font-size:10px; margin-top:5px">when the line you're reading reaches this far down the page, scroll it up to here (% from top)</div>
       </div>
@@ -436,7 +476,8 @@
           <ul>
             <li><b>Mic</b> button mutes your mic system-wide (also a hotkey); its fill shows the live input level</li>
             <li><b>Eye:</b> Live Captions opacity, window opacity, keep-on-top</li>
-            <li><b>Gear:</b> hotkeys, keywords, compact URL, stealth · <b>Save</b> (bookmark) exports the transcript</li>
+            <li><b>Shield:</b> privacy overlay and recovery shortcuts · <b>Gear:</b> audio, ChatGPT actions and hotkeys</li>
+            <li><b>Save</b> (bookmark) exports the transcript</li>
           </ul>
         </div>
       </div>

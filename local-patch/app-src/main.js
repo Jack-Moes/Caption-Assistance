@@ -63,8 +63,115 @@ let win = null;
 let reader = null;
 let restartTimer = null;
 let quitting = false;
-let alwaysOnTopState = false;   // mirrors the ↑ toggle; starts OFF. Gates the raise-on-click re-stamp.
-let stealthOn = false;   // stealth (hide from screen capture/sharing) is OFF by default; toggle it on in Settings
+let userAlwaysOnTopState = false;   // controlled only by the eye panel's Keep window on top switch
+let alwaysOnTopState = false;       // effective top-most state used by raiseWindow()
+
+// Privacy mode deliberately uses only documented Electron/Windows window controls.
+// Click-through is runtime-only and never persisted, so a restart always recovers mouse control.
+const PRIVACY_DEFAULTS = Object.freeze({
+  enabled: false,
+  captureProtected: true,
+  clickHotkey: 'CommandOrControl+Shift+X'
+});
+let privacyConfig = Object.assign({}, PRIVACY_DEFAULTS);
+let privacyRuntime = { clickThrough: false };
+let privacyHotkeyResults = { click: false };
+let privacyForcedOff = !!process.env.CAPTIONASSISTANCE_NOSTEALTH || process.argv.includes('--privacy-off');
+let taskbarPolicyTimer = null;
+
+function cleanPrivacyConfig(value) {
+  value = value && typeof value === 'object' ? value : {};
+  const key = (name) => {
+    const v = typeof value[name] === 'string' ? value[name].trim() : '';
+    return v && v.length <= 80 ? v : PRIVACY_DEFAULTS[name];
+  };
+  return {
+    enabled: privacyForcedOff ? false : value.enabled === true,
+    captureProtected: value.captureProtected !== false,
+    clickHotkey: key('clickHotkey')
+  };
+}
+function privacyConfigPath() { return path.join(app.getPath('userData'), 'privacy.json'); }
+function loadPrivacyConfig() {
+  try { privacyConfig = cleanPrivacyConfig(JSON.parse(fs.readFileSync(privacyConfigPath(), 'utf8'))); }
+  catch (e) { privacyConfig = cleanPrivacyConfig(PRIVACY_DEFAULTS); }
+}
+function savePrivacyConfig() {
+  try {
+    const p = privacyConfigPath();
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(privacyConfig, null, 2), 'utf8');
+  } catch (e) { console.error('[CA-main] privacy settings save failed:', e && e.message); }
+}
+function privacyActive() { return privacyConfig.enabled && !privacyForcedOff; }
+function privacyState() {
+  return {
+    config: Object.assign({}, privacyConfig, { enabled: privacyActive() }),
+    runtime: Object.assign({}, privacyRuntime),
+    hotkeys: Object.assign({}, privacyHotkeyResults),
+    forcedOff: privacyForcedOff
+  };
+}
+function sendPrivacyState() {
+  if (win && !win.isDestroyed()) { try { win.webContents.send('privacy-state', privacyState()); } catch (e) {} }
+}
+function applyTopPolicy() {
+  alwaysOnTopState = !!userAlwaysOnTopState;
+  if (!win || win.isDestroyed()) return;
+  try { win.setAlwaysOnTop(alwaysOnTopState, alwaysOnTopState ? 'screen-saver' : 'normal'); } catch (e) {}
+}
+function enforceTaskbarPolicy() {
+  if (!win || win.isDestroyed()) return;
+  try { win.setSkipTaskbar(privacyActive()); } catch (e) {}
+}
+function scheduleTaskbarPolicy() {
+  enforceTaskbarPolicy();
+  if (taskbarPolicyTimer) clearTimeout(taskbarPolicyTimer);
+  // Windows can rebuild the taskbar entry after show/restore/focus has completed.
+  // Re-assert once after that native window-style transition settles.
+  taskbarPolicyTimer = setTimeout(() => {
+    taskbarPolicyTimer = null;
+    enforceTaskbarPolicy();
+  }, 160);
+}
+function showPrivacyAwareWindow(focus) {
+  if (!win || win.isDestroyed()) return;
+  enforceTaskbarPolicy();
+  try { if (win.isMinimized()) win.restore(); } catch (e) {}
+  try { win.show(); } catch (e) {}
+  if (focus && !privacyRuntime.clickThrough) { try { win.focus(); } catch (e) {} }
+  scheduleTaskbarPolicy();
+}
+function applyPrivacyWindows() {
+  const active = privacyActive();
+  const capture = active && privacyConfig.captureProtected;
+  if (splash && !splash.isDestroyed()) { try { splash.setContentProtection(capture); } catch (e) {} }
+  if (!win || win.isDestroyed()) return;
+  if (!active) {
+    privacyRuntime.clickThrough = false;
+    try { win.setIgnoreMouseEvents(false); } catch (e) {}
+    try { win.setFocusable(true); } catch (e) {}
+    try { win.setContentProtection(false); } catch (e) {}
+  } else {
+    try { win.setContentProtection(capture); } catch (e) {}
+    try {
+      if (privacyRuntime.clickThrough) win.setIgnoreMouseEvents(true, { forward: true });
+      else win.setIgnoreMouseEvents(false);
+    } catch (e) {}
+    try { win.setFocusable(!privacyRuntime.clickThrough); } catch (e) {}
+  }
+  applyTopPolicy();
+  // Apply this LAST: setFocusable/setAlwaysOnTop can update native extended styles.
+  scheduleTaskbarPolicy();
+  sendPrivacyState();
+}
+function setPrivacyClickThrough(on) {
+  if (!privacyActive() || !privacyHotkeyResults.click) return false;
+  privacyRuntime.clickThrough = !!on;
+  console.log('[CA-main] privacy click-through ->', privacyRuntime.clickThrough);
+  applyPrivacyWindows();
+  return true;
+}
 // ---- in-app debug console: mirror main-process console output (incl. errors) to the renderer so logs
 // are catchable on machines without DevTools. A ring buffer serves the initial dump on window load.
 const _dbgBuf = [];
@@ -91,7 +198,7 @@ function createSplash() {
       alwaysOnTop: true, skipTaskbar: true, hasShadow: true, backgroundColor: '#05141a', show: true,
       webPreferences: { autoplayPolicy: 'no-user-gesture-required' }   // let the muted splash video autoplay
     });
-    try { splash.setContentProtection(stealthOn); } catch (e) {}
+    try { splash.setContentProtection(privacyActive() && privacyConfig.captureProtected); } catch (e) {}
     splash.loadFile(path.join(__dirname, 'images', 'splash.html'));
     splash.webContents.on('did-finish-load', () => { try { splash.webContents.executeJavaScript('var _v=document.getElementById("ver"); if(_v) _v.textContent=' + JSON.stringify('v' + app.getVersion()) + ';'); } catch (e) {} });
     splash.on('closed', () => { splash = null; });
@@ -105,7 +212,7 @@ function revealMain() {
   revealScheduled = true;
   const wait = Math.max(0, 5000 - (Date.now() - (splashAt || Date.now())));  // play the 5s start video
   setTimeout(() => {
-    try { if (win && !win.isDestroyed() && !win.isVisible()) win.show(); } catch (e) {}
+    try { if (win && !win.isDestroyed() && !win.isVisible()) showPrivacyAwareWindow(false); } catch (e) {}
     closeSplash();
   }, wait);
 }
@@ -122,7 +229,8 @@ function createWindow() {
     backgroundColor: '#ffffff',
     hasShadow: true,
     resizable: true,
-    alwaysOnTop: false,          // off by default; user pins with the ↑ header button
+    alwaysOnTop: false,
+    skipTaskbar: privacyActive(),
     show: false,                 // revealed on ready-to-show so the splash shows first, not a white blank
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -134,14 +242,14 @@ function createWindow() {
   win.once('ready-to-show', revealMain);   // reveals after the five-second minimum above
   setTimeout(revealMain, 12000);           // fallback: never leave the window hidden if ready-to-show is missed
   win.loadFile(path.join(__dirname, 'index.html'));
-  win.on('closed', () => { win = null; });
+  win.on('closed', () => { if (taskbarPolicyTimer) { clearTimeout(taskbarPolicyTimer); taskbarPolicyTimer = null; } win = null; });
   // Re-assert topmost whenever we regain focus, so we surface above another
   // WS_EX_TOPMOST window (e.g. a browser forced on-top by WindowsTop.exe). Covers
   // Alt+Tab / taskbar activation; mouse clicks are also covered by 'win-raise'.
-  win.on('focus', raiseWindow);
-  // stealth: exclude this window from screen capture / screen-sharing (WDA_EXCLUDEFROMCAPTURE
-  // on Win10 2004+). It stays fully visible to the user but records/streams as blank.
-  try { win.setContentProtection(stealthOn); } catch (e) {}
+  win.on('show', scheduleTaskbarPolicy);
+  win.on('restore', scheduleTaskbarPolicy);
+  win.on('focus', () => { raiseWindow(); scheduleTaskbarPolicy(); });
+  applyPrivacyWindows();
   setLcOpacity(0);          // hidden by default until the user changes it
   ensureLiveCaptions();
   startReader();
@@ -186,8 +294,14 @@ function startReader() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
+  app.on('second-instance', (event, argv) => {
+    const explicitRecovery = (argv || []).includes('--show') || (argv || []).includes('--privacy-off');
+    if (explicitRecovery) {
+      if ((argv || []).includes('--privacy-off')) privacyForcedOff = true;
+      privacyRuntime.clickThrough = false;
+      applyPrivacyWindows();
+    }
+    if (win) showPrivacyAwareWindow(true);
   });
   app.whenReady().then(async () => {
     const pass = networkAllowed();
@@ -195,6 +309,7 @@ if (!app.requestSingleInstanceLock()) {
       console.error('[CA-main] unauthorized network -> exiting (requires 192.168.5.*)');
       try { app.quit(); } catch (e) {} process.exit(1); return;   // exit BEFORE createWindow -> the splash never shows on an unauthorized machine
     }
+    loadPrivacyConfig();
     createWindow();
     // allow the renderer's getUserMedia (mic) + getDisplayMedia (system-audio loopback) without a prompt
     try {
@@ -230,7 +345,7 @@ app.on('window-all-closed', () => {
 // window controls
 ipcMain.on('win-min', () => { if (win) win.minimize(); });
 ipcMain.on('win-close', () => { if (win) win.close(); });
-ipcMain.on('win-top', (e, val) => { alwaysOnTopState = !!val; if (win) win.setAlwaysOnTop(!!val); });
+ipcMain.on('win-top', (e, val) => { userAlwaysOnTopState = !!val; applyTopPolicy(); });
 ipcMain.on('win-raise', () => raiseWindow());
 // Rise above any OTHER always-on-top window. Both share the single WS_EX_TOPMOST
 // z-band, where a plain HWND_TOP reorder isn't reliable and setAlwaysOnTop(true)
@@ -241,19 +356,73 @@ function raiseWindow() {
   if (!win || win.isDestroyed() || !alwaysOnTopState) return;
   try { win.setAlwaysOnTop(false); win.setAlwaysOnTop(true, 'screen-saver'); win.moveTop(); } catch (e) {}
 }
-ipcMain.on('set-stealth', (e, on) => { if (process.env.CAPTIONASSISTANCE_NOSTEALTH) return; stealthOn = !!on; if (win && !win.isDestroyed()) { try { win.setContentProtection(stealthOn); } catch (err) {} } });
+// Backward-compatible bridge for older renderer builds. New builds use set-privacy below.
+ipcMain.on('set-stealth', (e, on) => {
+  privacyConfig.enabled = !privacyForcedOff && !!on;
+  privacyConfig.captureProtected = true;
+  if (!privacyConfig.enabled) privacyRuntime.clickThrough = false;
+  savePrivacyConfig();
+  registerHotkeys();
+  applyPrivacyWindows();
+});
+ipcMain.handle('get-privacy', () => privacyState());
+ipcMain.handle('set-privacy', (e, cfg) => {
+  // Always leave click-through before changing/re-registering its recovery key.
+  privacyRuntime.clickThrough = false;
+  privacyConfig = cleanPrivacyConfig(Object.assign({}, privacyConfig, cfg || {}));
+  if (!privacyActive()) privacyRuntime.clickThrough = false;
+  savePrivacyConfig();
+  registerHotkeys();
+  applyPrivacyWindows();
+  return privacyState();
+});
+ipcMain.handle('privacy-action', (e, action) => {
+  let ok = false;
+  if (action === 'toggle-click') ok = setPrivacyClickThrough(!privacyRuntime.clickThrough);
+  else if (action === 'click-off') ok = setPrivacyClickThrough(false);
+  return { ok: ok, state: privacyState() };
+});
 ipcMain.on('clip', (e, text) => clipboard.writeText(text || ''));
 
 // ---- Send the caption selection to ChatGPT via the Chrome-extension bridge ----
 // doSendChatGPT queues a command; the "Caption assistance Bridge" extension long-polls the
 // local server below, then types the text into the chatgpt.com tab and submits it.
+let answerInApp = false;
+let gptRequestSeq = 0;
+let currentGptRequest = null;   // authoritative in-flight request; survives extension service-worker restarts while the app is open
+function emitGptStatus(status) {
+  if (win && !win.isDestroyed()) win.webContents.send('gpt-status', status || {});
+}
+function emitGptResult(result) {
+  if (win && !win.isDestroyed()) win.webContents.send('gpt-result', result || {});
+}
 function doSendChatGPT(text, actionId, submit, focus) {
   text = (text || '').toString().trim();
   console.log('[CA-main] doSendChatGPT len', text.length, '| extConnected', extConnected());
   dbg('doSend textlen=' + text.length);
   if (!text) { console.log('[CA-main] empty selection -> nothing queued'); dbg('  EMPTY -> not queued'); return; }
-  enqueueCommand({ type: 'send', text: text, submit: submit !== false, focus: focus !== false, ts: Date.now() });
-  if (win && !win.isDestroyed()) win.webContents.send('gpt-status', { connected: extConnected(), justSent: true, action: actionId || 'send' });
+  const wantsAnswer = !!answerInApp && submit !== false;
+  const shouldFocus = (focus == null) ? !wantsAnswer : focus !== false;
+  const requestId = Date.now().toString(36) + '-' + (++gptRequestSeq).toString(36);
+  if (wantsAnswer && currentGptRequest && ['queued', 'delivered', 'submitted', 'generating', 'recovering'].includes(currentGptRequest.state)) {
+    console.log('[CA-main] ignored duplicate send while request is active:', currentGptRequest.requestId);
+    dbg('SEND BLOCKED active=' + currentGptRequest.requestId);
+    return;
+  }
+  if (wantsAnswer && currentGptRequest && currentGptRequest.sent && currentGptRequest.text === text && Date.now() - currentGptRequest.ts < 60000) {
+    emitGptResult({ ok: false, error: 'This same question may already have been sent. Use Refresh instead of sending it again.', code: 'duplicate-risk', requestId: currentGptRequest.requestId, returnToApp: true, actionId: currentGptRequest.actionId });
+    return;
+  }
+  if (wantsAnswer) currentGptRequest = { requestId, text, actionId: actionId || 'send', state: 'queued', ts: Date.now(), recoveries: 0 };
+  emitGptStatus({ connected: extConnected(), bound: boundClient != null, justSent: true, action: actionId || 'send', requestId, returnToApp: wantsAnswer, phase: 'queued' });
+  if (!extConnected() || !boundClient) {
+    const error = !extConnected() ? 'Caption assistance Bridge is not connected.' : 'No ChatGPT tab is bound. Bind one ChatGPT tab first.';
+    if (currentGptRequest && currentGptRequest.requestId === requestId) currentGptRequest.state = 'error';
+    emitGptResult({ ok: false, error, code: !extConnected() ? 'bridge-offline' : 'no-bound-tab', requestId, returnToApp: wantsAnswer, actionId: actionId || 'send' });
+    return;
+  }
+  if (shouldFocus) allowForeground();
+  enqueueCommand({ type: 'send', text: text, submit: submit !== false, focus: shouldFocus, returnToApp: wantsAnswer, requestId: requestId, actionId: actionId || 'send', ts: Date.now(), expiresAt: Date.now() + 5000 });
 }
 // grant foreground rights (while THIS app is foreground on the click) so the bound
 // browser tab can raise above this window when the extension focuses it
@@ -266,6 +435,23 @@ function allowForeground() {
   } catch (e) {}
 }
 ipcMain.on('send-chatgpt', (e, text) => doSendChatGPT(text));
+ipcMain.on('set-answer-in-app', (e, on) => { answerInApp = !!on; });
+ipcMain.on('reset-gpt-session', () => { currentGptRequest = null; });
+ipcMain.on('recover-gpt', () => {
+  const r = currentGptRequest;
+  if (!r || !r.requestId || !r.text) {
+    emitGptResult({ ok: false, error: 'There is no recent ChatGPT request to recover.', code: 'no-request', requestId: '', returnToApp: true });
+    return;
+  }
+  if (!extConnected() || !boundClient) {
+    emitGptResult({ ok: false, error: !extConnected() ? 'Caption assistance Bridge is not connected.' : 'No ChatGPT tab is bound.', code: !extConnected() ? 'bridge-offline' : 'no-bound-tab', requestId: r.requestId, returnToApp: true });
+    return;
+  }
+  if (r.state === 'recovering') return;
+  r.state = 'recovering'; r.recoveries = (r.recoveries || 0) + 1;
+  emitGptStatus({ connected: true, bound: true, requestId: r.requestId, returnToApp: true, phase: 'recovering' });
+  enqueueCommand({ type: 'recover', text: r.text, submit: true, focus: false, returnToApp: true, requestId: r.requestId, actionId: r.actionId, recovery: r.recoveries, ts: Date.now(), expiresAt: Date.now() + 8000 });
+});
 // Read the live caption selection straight from the renderer (the DOM selection
 // survives the window losing focus).
 async function getSelectionText() {
@@ -289,8 +475,11 @@ let actions = {
 async function sendAction(id) {
   console.log('[CA-main] sendAction:', id);
   dbg('sendAction ' + id);
-  if (id !== 'bb') allowForeground();   // grant foreground so the bound tab can raise (not for bb/zz)
   if (id === 'compact') {
+    if (!extConnected() || !boundClient) {
+      emitGptResult({ ok: false, error: !extConnected() ? 'Caption assistance Bridge is not connected.' : 'No ChatGPT tab is bound.', code: !extConnected() ? 'bridge-offline' : 'no-bound-tab', returnToApp: false, actionId: 'compact' });
+      return;
+    }
     enqueueCommand({ type: 'compact', url: (actions.compact.url || ''), ts: Date.now() });
     if (win && !win.isDestroyed()) { win.webContents.send('gpt-status', { connected: extConnected(), justSent: true, action: 'compact' }); win.webContents.send('advance-selection', 'compact'); }
     return;
@@ -303,7 +492,7 @@ async function sendAction(id) {
   else if (id === 'bb') { text = (actions.bb.text || 'bb'); }
   console.log('[CA-main] action', id, '-> text length', text.length, 'submit', submit);
   dbg('  ' + id + ' built textlen=' + text.length);
-  doSendChatGPT(text, id, submit, id !== 'bb');   // bb/zz: don't bring the browser forward
+  doSendChatGPT(text, id, submit);   // Answer-in-app decides whether the bound ChatGPT tab may take focus.
   // bb/zz sends a fixed keyword (not the selection) -> leave the selection untouched
   if (id !== 'bb' && win && !win.isDestroyed()) win.webContents.send('advance-selection', id);
 }
@@ -341,12 +530,26 @@ ipcMain.handle('get-prompts', () => {
 
 // ---- user-configurable global hotkeys (defaults F1/F2/F3) ----
 let codingMode = false;   // Live Coding interview mode: F1..F5 become the coding-prompt commands
-// send a plain keyword (e.g. "1".."5") to the bound ChatGPT tab, keyword-only, and submit
-function sendKeyword(text) { allowForeground(); doSendChatGPT(String(text == null ? '' : text), 'code', true, true); }
+// Live Coding: send command 1..5 plus the selected problem/code. With no selection,
+// the primed ChatGPT conversation applies the command to its most recent coding context.
+async function sendKeyword(text) {
+  const cmd = String(text == null ? '' : text).trim();
+  const sel = await getSelectionText();
+  doSendChatGPT(sel ? (cmd + '\n' + sel) : cmd, 'code' + cmd, true);
+  if (sel && win && !win.isDestroyed()) win.webContents.send('advance-selection', 'code' + cmd);
+}
 function registerHotkeys() {
   try { globalShortcut.unregisterAll(); } catch (e) {}
   const reg = (key, fn) => { if (!key) return true; try { return globalShortcut.register(key, fn); } catch (e) { return false; } };
   const results = {};
+  // Register the click-through recovery key first. If another action uses the same
+  // key, the ordinary action loses the collision; mouse recovery must always win.
+  if (privacyActive()) {
+    privacyHotkeyResults.click = reg(privacyConfig.clickHotkey, () => setPrivacyClickThrough(!privacyRuntime.clickThrough));
+  } else {
+    privacyHotkeyResults.click = false;
+  }
+  results.privacyClick = privacyHotkeyResults.click;
   if (codingMode) {
     // Live Coding ONLY: F1..F5 -> commands 1..5 (explain/code/improve/edge/time). Standard mode is untouched.
     ['1', '2', '3', '4', '5'].forEach((c, i) => { results['code' + c] = reg('F' + (i + 1), () => sendKeyword(c)); });
@@ -358,6 +561,7 @@ function registerHotkeys() {
   }
   results.micmute = reg(actions.micmute.key, () => { if (win && !win.isDestroyed()) win.webContents.send('hotkey-mute'); });
   console.log('[CA-main] registered hotkeys (coding=' + codingMode + ') -> ok:', JSON.stringify(results));
+  sendPrivacyState();
   return results;
 }
 ipcMain.on('send-keyword', (e, text) => sendKeyword(text));
@@ -380,8 +584,9 @@ let bridgeServer = null;
 let extLastSeen = 0;
 const cmdQueue = [];
 const pollWaiters = [];
+const queuedCommandKeys = new Set();
 let boundClient = null;   // which browser (extension instance) holds the binding; ONLY it receives commands
-function extConnected() { return (Date.now() - extLastSeen) < 40000; }
+function extConnected() { return (Date.now() - extLastSeen) < 7000; }
 function bridgeSend(res, code, obj) {
   const body = JSON.stringify(obj || {});
   res.writeHead(code, {
@@ -393,11 +598,55 @@ function bridgeSend(res, code, obj) {
   res.end(body);
 }
 function enqueueCommand(cmd) {
+  const key = String(cmd.type || '') + ':' + String(cmd.requestId || cmd.ts || '');
+  if (queuedCommandKeys.has(key)) return false;
+  pruneCommandQueue();
+  queuedCommandKeys.add(key);
+  cmd._queueKey = key;
   cmdQueue.push(cmd);   // the bound extension short-polls every ~500ms and picks it up
   console.log('[CA-main] queued', cmd.type, 'queueLen', cmdQueue.length, 'boundClient', boundClient);
   dbg('ENQUEUE ' + cmd.type + ' qlen=' + cmdQueue.length + ' boundClient=' + boundClient);
-  const cutoff = Date.now() - 30000;   // drop stale sends so a briefly-absent extension can't replay them
-  while (cmdQueue.length && cmdQueue[0].ts < cutoff) cmdQueue.shift();
+  flushCommandWaiter();   // wake the bound extension immediately, even when its ChatGPT tab is inactive
+  return true;
+}
+function expireCommand(cmd) {
+  if (!cmd) return;
+  if (cmd._queueKey) queuedCommandKeys.delete(cmd._queueKey);
+  emitGptResult({ ok: false, error: 'The ChatGPT request expired before the extension received it. Please try again.', code: 'command-expired', requestId: cmd.requestId || '', returnToApp: !!cmd.returnToApp, actionId: cmd.actionId || '' });
+  if (currentGptRequest && currentGptRequest.requestId === cmd.requestId) currentGptRequest.state = 'error';
+}
+function pruneCommandQueue() {
+  const now = Date.now();
+  for (let i = cmdQueue.length - 1; i >= 0; i--) {
+    const cmd = cmdQueue[i];
+    const expires = Number(cmd.expiresAt || ((cmd.ts || now) + 30000));
+    if (expires <= now) { cmdQueue.splice(i, 1); expireCommand(cmd); }
+  }
+}
+function takeCommand() {
+  pruneCommandQueue();
+  const cmd = cmdQueue.shift() || null;
+  if (cmd && cmd._queueKey) queuedCommandKeys.delete(cmd._queueKey);
+  if (cmd && currentGptRequest && currentGptRequest.requestId === cmd.requestId) {
+    currentGptRequest.state = cmd.type === 'recover' ? 'recovering' : 'delivered';
+    emitGptStatus({ connected: true, bound: true, requestId: cmd.requestId, returnToApp: !!cmd.returnToApp, phase: 'delivered' });
+  }
+  return cmd;
+}
+function finishCommandWaiter(waiter, commands) {
+  const i = pollWaiters.indexOf(waiter); if (i >= 0) pollWaiters.splice(i, 1);
+  clearTimeout(waiter.timer);
+  if (!waiter.res.writableEnded) bridgeSend(waiter.res, 200, { commands: commands || [], boundClient: boundClient });
+}
+function flushCommandWaiter() {
+  if (!boundClient || !cmdQueue.length) return false;
+  const waiter = pollWaiters.find((w) => w.client === boundClient);
+  if (!waiter) return false;
+  const cmd = takeCommand();
+  if (!cmd) return false;
+  dbg('WAIT -> DELIVERING ' + cmd.type + ' to ' + waiter.client);
+  finishCommandWaiter(waiter, [cmd]);
+  return true;
 }
 function startBridge() {
   try {
@@ -407,17 +656,34 @@ function startBridge() {
       if (u.searchParams.get('token') !== BRIDGE_TOKEN) { bridgeSend(res, 403, { error: 'bad token' }); return; }
       extLastSeen = Date.now();
       if (u.pathname === '/poll') {
+        pruneCommandQueue();
         const client = u.searchParams.get('client') || '';
         const isBound = boundClient && client === boundClient;
         // "linked" == the server holds a binding. Same source as the extension icon (boundClient/cid), so
         // the two indicators always AGREE. The extension unbinds the moment its bound tab closes (backstop
         // below), so boundClient staying set already means a live bound tab.
         if (win && !win.isDestroyed()) win.webContents.send('gpt-status', { connected: true, bound: boundClient != null });
-        const qBefore = cmdQueue.length;
-        const cmds = (isBound && cmdQueue.length) ? [cmdQueue.shift()] : [];   // short poll: return immediately
-        dbg('POLL client=' + client + ' boundClient=' + boundClient + ' isBound=' + !!isBound + ' qBefore=' + qBefore + ' deliver=' + cmds.length);
-        if (cmds.length) console.log('[CA-main] /poll -> DELIVERING', cmds[0].type, 'to', client, '(boundClient', boundClient + ')');
-        bridgeSend(res, 200, { commands: cmds, boundClient: boundClient, teleOn: teleOn, mic: teleCap, consoleOn: consoleOn, micSource: (micEngine === 'browser' ? 'system' : 'app'), engine: micEngine, speakerEngine: speakerEngine, scrollTrigger: scrollParams.trigger, scrollTarget: scrollParams.target, scrollSpeed: scrollParams.speed });
+        dbg('POLL state-only client=' + client + ' boundClient=' + boundClient + ' isBound=' + !!isBound);
+        bridgeSend(res, 200, { commands: [], boundClient: boundClient, teleOn: teleOn, mic: teleCap, consoleOn: consoleOn, micSource: (micEngine === 'browser' ? 'system' : 'app'), engine: micEngine, speakerEngine: speakerEngine, scrollTrigger: scrollParams.trigger, scrollTarget: scrollParams.target, scrollSpeed: scrollParams.speed });
+        return;
+      }
+      if (u.pathname === '/wait') {
+        const client = u.searchParams.get('client') || '';
+        if (win && !win.isDestroyed()) win.webContents.send('gpt-status', { connected: true, bound: boundClient != null });
+        if (boundClient && client === boundClient && cmdQueue.length) {
+          const cmd = takeCommand();
+          if (!cmd) { bridgeSend(res, 200, { commands: [], boundClient: boundClient }); return; }
+          dbg('WAIT immediate -> ' + cmd.type + ' to ' + client);
+          bridgeSend(res, 200, { commands: [cmd], boundClient: boundClient });
+          return;
+        }
+        const waiter = { client: client, res: res, timer: null };
+        waiter.timer = setTimeout(() => finishCommandWaiter(waiter, []), 2500);   // also refreshes the UI's bridge indicator before its 3.5 s freshness window expires
+        pollWaiters.push(waiter);
+        res.on('close', () => {
+          const i = pollWaiters.indexOf(waiter);
+          if (i >= 0) { pollWaiters.splice(i, 1); clearTimeout(waiter.timer); }
+        });
         return;
       }
       if (u.pathname === '/bind') {
@@ -425,12 +691,19 @@ function startBridge() {
         const bound = u.searchParams.get('bound') === '1';
         if (bound) boundClient = client; else if (boundClient === client) boundClient = null;
         console.log('[CA-main] /bind client', client, 'bound', bound, '-> boundClient', boundClient);
+        flushCommandWaiter();
         bridgeSend(res, 200, { ok: true, boundClient: boundClient });
         return;
       }
       if (u.pathname === '/result') {
         let body = ''; req.on('data', (c) => { body += c; if (body.length > 2e6) req.destroy(); });
-        req.on('end', () => { let obj = {}; try { obj = JSON.parse(body || '{}'); } catch (e) {} console.log('[CA-main] /result', JSON.stringify(obj)); dbg('RESULT ' + JSON.stringify(obj)); if (win && !win.isDestroyed()) win.webContents.send('gpt-result', obj); bridgeSend(res, 200, { ok: true }); });
+        req.on('end', () => {
+          let obj = {}; try { obj = JSON.parse(body || '{}'); } catch (e) {}
+          console.log('[CA-main] /result', JSON.stringify(obj)); dbg('RESULT ' + JSON.stringify(obj));
+          if (currentGptRequest && obj.requestId === currentGptRequest.requestId) { currentGptRequest.state = obj.ok ? 'submitted' : 'error'; if (obj.ok) currentGptRequest.sent = true; }
+          if (obj.ok && obj.requestId) emitGptStatus({ connected: true, bound: true, requestId: obj.requestId, returnToApp: !!obj.returnToApp, phase: obj.recovered ? 'recovering' : 'submitted' });
+          emitGptResult(obj); bridgeSend(res, 200, { ok: true });
+        });
         return;
       }
       if (u.pathname === '/from-ext') {   // reverse channel: the extension pushes browser mic / Chrome caption / console state
@@ -684,6 +957,17 @@ function handleFromExt(o) {
   else if (o.type === 'browser-mic') win.webContents.send('browser-mic', { label: String(o.label || '') });
   else if (o.type === 'console-closed') { consoleOn = false; win.webContents.send('console-closed'); }
   else if (o.type === 'toggle-autoscroll') { win.webContents.send('toggle-autoscroll'); }
+  else if (o.type === 'gpt-answer') {
+    if (currentGptRequest && String(o.requestId || '') === currentGptRequest.requestId) {
+      currentGptRequest.state = o.phase === 'final' ? 'complete' : (o.phase === 'error' ? 'error' : 'generating');
+      if (o.phase !== 'error') currentGptRequest.sent = true;
+    }
+    win.webContents.send('gpt-answer', {
+      requestId: String(o.requestId || ''), phase: String(o.phase || ''),
+      text: String(o.text || ''), error: String(o.error || ''),
+      code: String(o.code || ''), seq: Number.isFinite(+o.seq) ? +o.seq : 0
+    });
+  }
 }
 // one-click setup for the Local GPU engine (torch + RealtimeSTT + faster-whisper), streaming progress
 ipcMain.handle('install-local', () => new Promise((resolve) => {

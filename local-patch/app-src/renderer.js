@@ -66,6 +66,9 @@ let busy = false, busyTimer = null, busyBtn = null;   // a ChatGPT action is in 
 let sentMarks = [];          // caption positions the user sent from (send/aa/compact/paste) -> visual markers
 let followStopped = false;   // "stop snipping": freeze the growing select-till-end selection
 let lastConn = 0, connBound = false;   // ChatGPT bridge connection indicator
+let answerInApp = false;
+try { answerInApp = localStorage.getItem('ca_answer_in_app') === '1'; } catch (e) {}
+let answerRequestId = '', answerSeq = -1, answerText = '', answerPhase = 'ready', answerRecovering = false;
 
 const captionEl = $('caption');
 
@@ -516,6 +519,7 @@ document.addEventListener('keydown', (e) => {
 
 // ================= screens =================
 function show(name) {
+  closePops();
   screen = name;
   for (const s of ['home', 'new', 'live', 'prompts']) $(s).classList.toggle('hidden', s !== name);
   document.querySelectorAll('.side[data-nav]').forEach((b) => b.classList.toggle('active', b.dataset.nav === name));
@@ -595,7 +599,13 @@ function openReview(s) {
   setupReplay(s);   // audio player + timestamp sync (stays hidden if this session has no recording)
 }
 function startLiveSession() {
+  setBusy(false);
+  if (window.cap.resetGptSession) window.cap.resetGptSession();
   review = false; captureStopped = false; frozenElapsed = 0; dirtyFrom = Infinity; resetTranscript();
+  answerRequestId = ''; answerSeq = -1; answerText = ''; answerPhase = 'ready'; answerRecovering = false;
+  $('gptAnswerText').textContent = 'Select an interview question, then press Send or another answer button.';
+  $('gptAnswerText').classList.add('empty');
+  setAnswerStatus('Ready', 'ready');
   teardownReplay();
   viewMode = 'speaker'; applySrcToggle();
   $('dot').classList.remove('paused'); $('endBtn').innerHTML = '<svg class="ic sq"><use href="#i-stop"/></svg>';
@@ -617,47 +627,61 @@ function applyAppOpacity() {
   $('appOpacityVal').textContent = appOpacity + '%'; $('appOpacitySlider').value = appOpacity;
   localStorage.setItem('ce_appOpacity', appOpacity);
 }
-// popovers: opacity (eye) + settings (gear), both dismissed by the shared backdrop
-function positionPopAt(btnId, popId) {
-  const r = $(btnId).getBoundingClientRect(); const pop = $(popId);
+// These controls are global, so detach their one shared copy from the Live screen.
+// It can then be opened from Home, New Session, Prompts, or Live without duplicated state.
+['popBackdrop', 'opacityPop', 'privacyPop', 'settingsPop'].forEach((id) => { const el = $(id); if (el) document.body.appendChild(el); });
+let openPopAnchor = null;
+function anchorEl(anchor) { return typeof anchor === 'string' ? $(anchor) : anchor; }
+function positionPopAt(anchor, popId) {
+  const btn = anchorEl(anchor); if (!btn) return;
+  const r = btn.getBoundingClientRect(); const pop = $(popId);
   const w = pop.offsetWidth || 236, h = pop.offsetHeight || 200;
   let top = r.bottom + 4;
   if (top + h > window.innerHeight - 8) top = Math.max(8, window.innerHeight - h - 8);   // keep the (tall) dialog fully on-screen
   pop.style.top = top + 'px';
   pop.style.left = Math.max(8, Math.min(r.left - 90, window.innerWidth - w - 8)) + 'px';
 }
-function closePops() { $('opacityPop').classList.add('hidden'); $('settingsPop').classList.add('hidden'); if ($('srcPop')) $('srcPop').classList.add('hidden'); $('popBackdrop').classList.add('hidden'); }
-function togglePop(btnId, popId) {
+function closePops() {
+  ['opacityPop', 'privacyPop', 'settingsPop', 'srcPop'].forEach((id) => { if ($(id)) $(id).classList.add('hidden'); });
+  if (typeof cancelHotkeyCapture === 'function') cancelHotkeyCapture();
+  $('popBackdrop').classList.add('hidden'); openPopAnchor = null;
+}
+function togglePop(anchor, popId) {
   const willOpen = $(popId).classList.contains('hidden');
   closePops();
   if (willOpen) {
+    openPopAnchor = anchorEl(anchor);
+    if ($('lcOpacityRow')) $('lcOpacityRow').classList.toggle('hidden', screen !== 'live');
     $(popId).classList.remove('hidden'); $('popBackdrop').classList.remove('hidden');
     // settings is a wide dialog -- if the window is too narrow to show it, widen the window first
-    if (popId === 'settingsPop' && window.innerWidth < 284) { window.cap.resize(284, window.innerHeight); setTimeout(() => positionPopAt(btnId, popId), 70); }
-    positionPopAt(btnId, popId);
+    if ((popId === 'settingsPop' || popId === 'privacyPop') && window.innerWidth < 344) { window.cap.resize(344, window.innerHeight); setTimeout(() => positionPopAt(openPopAnchor, popId), 70); }
+    positionPopAt(openPopAnchor, popId);
   }
 }
-$('dimBtn').addEventListener('click', (e) => { e.stopPropagation(); window.cap.ensureLiveCaptions(); togglePop('dimBtn', 'opacityPop'); });
-$('settingsBtn').addEventListener('click', (e) => { e.stopPropagation(); togglePop('settingsBtn', 'settingsPop'); });
+document.querySelectorAll('[data-pop]').forEach((b) => b.addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (b.dataset.pop === 'opacityPop' && screen === 'live') window.cap.ensureLiveCaptions();
+  togglePop(b, b.dataset.pop);
+}));
 // A transparent no-drag backdrop covers the window while a popover is open, so a click
 // anywhere -- INCLUDING the draggable header, whose drag region swallows clicks -- dismisses it.
 $('popBackdrop').addEventListener('click', closePops);
 $('opacitySlider').addEventListener('input', () => { lcOpacity = +$('opacitySlider').value; applyOpacity(); });
 $('appOpacitySlider').addEventListener('input', () => { appOpacity = +$('appOpacitySlider').value; applyAppOpacity(); });
 document.addEventListener('click', (e) => {
-  if (e.target.id === 'dimBtn' || e.target.id === 'settingsBtn' || (e.target.closest && e.target.closest('#srcBtn'))) return;
+  if (e.target.closest && (e.target.closest('[data-pop]') || e.target.closest('#srcBtn'))) return;
   const sp = $('srcPop');
-  const inPop = $('opacityPop').contains(e.target) || $('settingsPop').contains(e.target) || (sp && sp.contains(e.target));
-  const anyOpen = !$('opacityPop').classList.contains('hidden') || !$('settingsPop').classList.contains('hidden') || (sp && !sp.classList.contains('hidden'));
+  const inPop = $('opacityPop').contains(e.target) || $('privacyPop').contains(e.target) || $('settingsPop').contains(e.target) || (sp && sp.contains(e.target));
+  const anyOpen = !$('opacityPop').classList.contains('hidden') || !$('privacyPop').classList.contains('hidden') || !$('settingsPop').classList.contains('hidden') || (sp && !sp.classList.contains('hidden'));
   if (!inPop && anyOpen) closePops();
 });
 window.addEventListener('resize', () => {
-  if (!$('opacityPop').classList.contains('hidden')) positionPopAt('dimBtn', 'opacityPop');
-  if (!$('settingsPop').classList.contains('hidden')) positionPopAt('settingsBtn', 'settingsPop');
-  if ($('srcPop') && !$('srcPop').classList.contains('hidden')) positionPopAt('srcBtn', 'srcPop');
+  for (const id of ['opacityPop', 'privacyPop', 'settingsPop', 'srcPop']) {
+    if ($(id) && !$(id).classList.contains('hidden')) positionPopAt(openPopAnchor, id);
+  }
 });
 
-// ===== ChatGPT actions: hotkeys, keywords, compact URL, stealth, connection status =====
+// ===== ChatGPT actions, hotkeys, privacy overlay, connection status =====
 let hotCfg = {
   send:    { key: '' },              // hotkeys start UNBOUND -- the user assigns them (click the box, press a key)
   aa:      { key: '', label: 'aa' },
@@ -665,6 +689,65 @@ let hotCfg = {
   compact: { key: '', url: '' },
   micmute: { key: '' }
 };
+const PRIVACY_UI_DEFAULTS = {
+  enabled: false, captureProtected: true, clickHotkey: 'CommandOrControl+Shift+X'
+};
+let privacyCfg = Object.assign({}, PRIVACY_UI_DEFAULTS);
+let privacyRuntime = { clickThrough: false };
+let privacyHotkeys = { click: false };
+let privacyForcedOff = false;
+let privacyClickTimer = null;
+function displayAccel(key) { return (key || '').replace('CommandOrControl', 'Ctrl'); }
+function renderPrivacy(state) {
+  if (state) {
+    privacyCfg = Object.assign({}, PRIVACY_UI_DEFAULTS, state.config || {});
+    privacyRuntime = Object.assign({ clickThrough:false }, state.runtime || {});
+    privacyHotkeys = Object.assign({ click:false }, state.hotkeys || {});
+    privacyForcedOff = !!state.forcedOff;
+  }
+  $('privacyEnabled').checked = !!privacyCfg.enabled;
+  $('privacyEnabled').disabled = privacyForcedOff;
+  $('privacyCapture').checked = !!privacyCfg.captureProtected;
+  $('privacyClick').checked = !!privacyRuntime.clickThrough;
+  $('privacyOptions').classList.toggle('is-disabled', !privacyCfg.enabled || privacyForcedOff);
+  $('hkPrivacyClick').textContent = displayAccel(privacyCfg.clickHotkey);
+  markHk('hkPrivacyClick', !privacyCfg.enabled || privacyHotkeys.click);
+  $('privacyClick').disabled = !privacyCfg.enabled || !privacyHotkeys.click;
+  document.querySelectorAll('.privacy-trigger').forEach((b) => {
+    const failed = !!privacyCfg.enabled && !privacyHotkeys.click;
+    b.classList.toggle('privacy-on', !!privacyCfg.enabled && !privacyRuntime.clickThrough && !failed);
+    b.classList.toggle('privacy-click', !!privacyRuntime.clickThrough && !failed);
+    b.classList.toggle('privacy-error', failed);
+    b.title = privacyForcedOff ? 'Privacy overlay · safe start disabled it' : failed ? 'Privacy overlay · recovery shortcut unavailable' : privacyRuntime.clickThrough ? 'Privacy overlay · click-through ON · ' + displayAccel(privacyCfg.clickHotkey) + ' to exit' : privacyCfg.enabled ? 'Privacy overlay active' : 'Privacy overlay off';
+  });
+  const status = $('privacyStatus');
+  status.className = 'privacy-status';
+  if (privacyForcedOff) status.textContent = 'Safe start is active. Privacy controls are disabled for this run.';
+  else if (!privacyCfg.enabled) status.textContent = 'Privacy overlay is off.';
+  else if (!privacyHotkeys.click) {
+    status.classList.add('warn');
+    status.textContent = 'A recovery shortcut could not be registered. The related risky action is disabled.';
+  } else if (privacyRuntime.clickThrough) {
+    status.classList.add('warn');
+    status.textContent = 'Click-through is ON. Press ' + displayAccel(privacyCfg.clickHotkey) + ' to regain mouse control.';
+  } else {
+    const active = [];
+    if (privacyCfg.captureProtected) active.push('capture protected');
+    active.push('taskbar hidden');
+    status.classList.add('ok');
+    status.textContent = 'Active' + (active.length ? ': ' + active.join(' · ') : '') + '. Click-through recovery: ' + displayAccel(privacyCfg.clickHotkey) + '.';
+  }
+}
+async function pushPrivacy(patch) {
+  try {
+    const state = await window.cap.setPrivacy(Object.assign({}, privacyCfg, patch || {}));
+    renderPrivacy(state);
+    return state;
+  } catch (e) {
+    const status = $('privacyStatus'); status.className = 'privacy-status warn'; status.textContent = 'Could not apply privacy settings.';
+    return null;
+  }
+}
 try { const s = JSON.parse(localStorage.getItem('ce_hotcfg') || 'null'); if (s) hotCfg = Object.assign(hotCfg, s); } catch (e) {}
 if (hotCfg.bb && hotCfg.bb.text === 'bb') hotCfg.bb.text = 'zz';   // rename the old default bb -> zz
 // one-time migration: machines still carrying the old pre-set F1/F2/F3/F6 defaults -> unbind them
@@ -677,6 +760,7 @@ function applyHotUI() {
   $('hkBb').textContent = hotCfg.bb.key || '—';
   $('hkCompact').textContent = hotCfg.compact.key || '—';
   if ($('hkMic')) $('hkMic').textContent = (hotCfg.micmute && hotCfg.micmute.key) || '—';
+  if ($('hkPrivacyClick')) $('hkPrivacyClick').textContent = displayAccel(privacyCfg.clickHotkey);
   $('kwAa').value = hotCfg.aa.label != null ? hotCfg.aa.label : 'aa';
   $('kwBb').value = hotCfg.bb.text != null ? hotCfg.bb.text : 'zz';
   $('kwCompactUrl').value = hotCfg.compact.url || '';
@@ -704,6 +788,13 @@ function syncHot() {
 }
 // rebind a hotkey: click its box, then press the new key
 let capturing = null;
+function cancelHotkeyCapture() {
+  if (!capturing) return;
+  capturing.classList.remove('capturing');
+  capturing = null;
+  applyHotUI();
+  renderPrivacy();
+}
 function accelFromEvent(e) {
   if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return null;
   const mods = [];
@@ -717,9 +808,10 @@ function accelFromEvent(e) {
   else return null;
   return mods.length ? mods.join('+') + '+' + key : key;
 }
-document.querySelectorAll('.hk').forEach((b) => b.addEventListener('click', (e) => {
+document.querySelectorAll('.hk[data-act], .hk[data-pact]').forEach((b) => b.addEventListener('click', (e) => {
   e.stopPropagation();
-  if (capturing && capturing !== b) capturing.classList.remove('capturing');
+  if (capturing === b) { cancelHotkeyCapture(); return; }
+  cancelHotkeyCapture();
   capturing = b; b.classList.add('capturing'); b.textContent = 'press key…';
   b.title = 'Press a key to bind · Backspace/Delete to clear · Esc to cancel';
 }));
@@ -728,21 +820,127 @@ document.addEventListener('keydown', (e) => {
   if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
   e.preventDefault(); e.stopPropagation();
   const act = capturing.dataset.act;
+  const pact = capturing.dataset.pact;
   if (e.key === 'Escape') { /* cancel -> keep the current binding */ }
-  else if (e.key === 'Backspace' || e.key === 'Delete') { hotCfg[act].key = ''; }   // undefine / clear the hotkey
-  else { const acc = accelFromEvent(e); if (acc) hotCfg[act].key = acc; }
+  else if (act && (e.key === 'Backspace' || e.key === 'Delete')) { hotCfg[act].key = ''; }
+  else if (pact && (e.key === 'Backspace' || e.key === 'Delete')) {
+    // Privacy recovery shortcuts cannot be blank. Delete restores the safe default.
+    privacyCfg.clickHotkey = PRIVACY_UI_DEFAULTS.clickHotkey;
+  } else {
+    const acc = accelFromEvent(e);
+    if (acc && act) hotCfg[act].key = acc;
+    if (acc && pact) privacyCfg.clickHotkey = acc;
+  }
   capturing.classList.remove('capturing'); capturing = null;
-  applyHotUI(); syncHot();
+  applyHotUI();
+  if (act) syncHot();
+  if (pact) pushPrivacy();
 }, true);
 ['kwAa', 'kwBb', 'kwCompactUrl'].forEach((id) => $(id).addEventListener('change', syncHot));
-$('stealthToggle').addEventListener('change', () => {
-  const on = $('stealthToggle').checked;
-  window.cap.setStealth(on);
-  localStorage.setItem('ce_stealth', on ? '1' : '0');
+$('privacyEnabled').addEventListener('change', () => pushPrivacy({ enabled: $('privacyEnabled').checked }));
+$('privacyCapture').addEventListener('change', () => pushPrivacy({ captureProtected: $('privacyCapture').checked }));
+$('privacyClick').addEventListener('change', () => {
+  if (!$('privacyClick').checked) { window.cap.privacyAction('click-off').then((r) => renderPrivacy(r && r.state)).catch(() => renderPrivacy()); return; }
+  // A short visible warning gives the user time to read the recovery shortcut before mouse input is ignored.
+  $('privacyClick').checked = false;
+  const status = $('privacyStatus'); status.className = 'privacy-status warn';
+  status.textContent = 'Click-through starts in 2 seconds. Press ' + displayAccel(privacyCfg.clickHotkey) + ' to turn it off.';
+  clearTimeout(privacyClickTimer);
+  privacyClickTimer = setTimeout(() => {
+    window.cap.privacyAction('toggle-click').then((r) => renderPrivacy(r && r.state)).catch(() => renderPrivacy());
+  }, 2000);
 });
+if (window.cap.onPrivacyState) window.cap.onPrivacyState(renderPrivacy);
+function renderAnswerMode() {
+  const b = $('answerModeBtn');
+  b.setAttribute('aria-pressed', answerInApp ? 'true' : 'false');
+  b.classList.toggle('on', answerInApp);
+  b.classList.toggle('waiting', answerInApp && answerPhase === 'waiting');
+  b.classList.toggle('error', answerInApp && answerPhase === 'error');
+  b.title = answerInApp
+    ? 'Answer in app: ON — keep the current window and return ChatGPT replies here'
+    : 'Answer in app: OFF — show replies in the ChatGPT tab';
+  $('gptAnswerView').classList.toggle('hidden', !answerInApp);
+  $('minimap').classList.toggle('hidden', answerInApp);
+  $('caption').classList.remove('hidden');
+  const refresh = $('answerRefreshBtn'); if (refresh) refresh.disabled = !answerRequestId || answerRecovering;
+}
+function setAnswerStatus(label, phase) {
+  answerPhase = phase || 'ready';
+  const s = $('gptAnswerStatus');
+  s.textContent = label;
+  s.className = 'gpt-answer-status' + (phase && phase !== 'ready' ? ' ' + phase : '');
+  renderAnswerMode();
+}
+function beginGptAnswer(status) {
+  answerRequestId = String(status.requestId || ''); answerSeq = -1; answerText = ''; answerRecovering = false;
+  const out = $('gptAnswerText'); out.textContent = 'Waiting for ChatGPT…'; out.classList.add('empty');
+  setAnswerStatus('Queued…', 'waiting');
+}
+function failGptAnswer(message, partialText) {
+  answerRecovering = false;
+  const rb = $('answerRefreshBtn'); if (rb) rb.classList.remove('recovering');
+  const out = $('gptAnswerText');
+  if (partialText) {
+    answerText = partialText;
+    out.textContent = partialText + '\n\n— ' + (message || 'The response connection was interrupted.');
+    out.classList.remove('empty');
+  } else {
+    out.textContent = message || 'Could not receive the ChatGPT answer.'; out.classList.add('empty');
+  }
+  setAnswerStatus('Response error', 'error');
+  setBusy(false);
+}
+function receiveGptAnswer(r) {
+  if (!r || !r.requestId || r.requestId !== answerRequestId) return;
+  const seq = Number.isFinite(+r.seq) ? +r.seq : 0;
+  if (seq <= answerSeq) return;
+  answerSeq = seq;
+  answerRecovering = false;
+  const rb = $('answerRefreshBtn'); if (rb) rb.classList.remove('recovering');
+  if (r.phase === 'start' || r.phase === 'submitted') { setAnswerStatus('Generating…', 'waiting'); return; }
+  if (r.phase === 'recovered') { setAnswerStatus('Recovered · monitoring…', 'waiting'); return; }
+  if (r.phase === 'error') { failGptAnswer(r.error || 'No ChatGPT response was detected.', r.text || answerText); return; }
+  if (typeof r.text === 'string' && r.text) {
+    answerText = r.text;
+    const out = $('gptAnswerText');
+    const follow = out.scrollTop + out.clientHeight >= out.scrollHeight - 32;
+    out.textContent = answerText; out.classList.remove('empty');
+    if (follow) out.scrollTop = out.scrollHeight;
+  }
+  if (r.phase === 'final') { setAnswerStatus(r.error ? 'Complete · monitor timeout' : 'Complete', 'done'); setBusy(false); }
+  else setAnswerStatus('Generating…', 'waiting');
+}
+$('answerModeBtn').addEventListener('click', () => {
+  answerInApp = !answerInApp;
+  try { localStorage.setItem('ca_answer_in_app', answerInApp ? '1' : '0'); } catch (e) {}
+  if (window.cap.setAnswerInApp) window.cap.setAnswerInApp(answerInApp);
+  renderAnswerMode();
+});
+$('answerCopyBtn').addEventListener('click', () => {
+  if (!answerText) return;
+  window.cap.copy(answerText);
+  const u = $('answerCopyUse'); if (u) { u.setAttribute('href', '#i-check'); setTimeout(() => u.setAttribute('href', '#i-copy'), 550); }
+});
+if ($('answerRefreshBtn')) $('answerRefreshBtn').addEventListener('click', () => {
+  if (!answerRequestId || answerRecovering) return;
+  answerRecovering = true; answerSeq = -1;
+  $('answerRefreshBtn').classList.add('recovering');
+  setAnswerStatus('Recovering…', 'waiting');
+  setBusy(true, busyBtn || 'gptBtn', 30000);
+  if (window.cap.recoverGpt) window.cap.recoverGpt();
+});
+if (window.cap.onGptAnswer) window.cap.onGptAnswer(receiveGptAnswer);
 if (window.cap.onGptStatus) window.cap.onGptStatus((s) => {
   if (!s) return;
-  if (s.justSent) { const map = { send: 'gptBtn', aa: 'aaBtn', simple: 'simpleBtn', bb: 'bbBtn', compact: 'compactBtn', paste: 'editBtn' }; setBusy(true, map[s.action] || 'gptBtn'); }
+  if (s.justSent) {
+    const map = { send: 'gptBtn', aa: mode === 'Live Coding' ? 'aaCodeBtn' : 'aaBtn', simple: mode === 'Live Coding' ? 'ssCodeBtn' : 'simpleBtn', bb: 'bbBtn', compact: 'compactBtn', paste: 'editBtn', code1: 'planBtn', code2: 'codeBtn', code3: 'improveBtn', code4: 'edgeBtn', code5: 'complexityBtn' };
+    setBusy(true, map[s.action] || 'gptBtn', s.returnToApp ? 185000 : 9000);
+    if (s.returnToApp) beginGptAnswer(s);
+  }
+  if (s.requestId && s.requestId === answerRequestId && s.phase === 'delivered') setAnswerStatus('Sending…', 'waiting');
+  if (s.requestId && s.requestId === answerRequestId && s.phase === 'submitted') setAnswerStatus('Generating…', 'waiting');
+  if (s.requestId && s.requestId === answerRequestId && s.phase === 'recovering') setAnswerStatus('Recovering…', 'waiting');
   if (typeof s.connected !== 'boolean') return;
   const el = $('bridgeStatus');
   if (el) {
@@ -754,11 +952,17 @@ if (window.cap.onGptStatus) window.cap.onGptStatus((s) => {
   updateConn();
 });
 function updateConn() {
-  const el = $('gptConn'); if (!el) return;
   const on = (Date.now() - lastConn) < 3500;
-  el.classList.toggle('on', on && connBound);
-  el.classList.toggle('warn', on && !connBound);
-  el.textContent = on ? (connBound ? '● linked' : '● bind a tab') : '● no bridge';
+  const text = on ? (connBound ? '● linked' : '● bind a tab') : '● no bridge';
+  const title = on ? (connBound ? 'ChatGPT extension connected and a tab is bound' : 'Extension connected; bind a ChatGPT tab') : 'ChatGPT extension is not connected';
+  const nodes = Array.from(document.querySelectorAll('[data-global-conn]'));
+  if ($('gptConn')) nodes.push($('gptConn'));
+  nodes.forEach((el) => {
+    el.classList.toggle('on', on && connBound);
+    el.classList.toggle('warn', on && !connBound);
+    el.textContent = text;
+    el.title = title;
+  });
 }
 setInterval(updateConn, 1500);
 // restore persisted settings
@@ -769,10 +973,10 @@ setInterval(updateConn, 1500);
   lcOpacity = 0;      // always start with the original Live Captions hidden (0%)
   applyOpacity();     // write the value to the enforcement file so it sticks
   applyHotUI(); syncHot();   // reflect saved hotkeys/keywords in the UI and register them in main
-  const st = localStorage.getItem('ce_stealth');
-  const stealthOn = st === null ? false : st === '1';   // hide from screen capture -> default OFF
-  $('stealthToggle').checked = stealthOn;
-  window.cap.setStealth(stealthOn);
+  renderPrivacy();
+  if (window.cap.getPrivacy) window.cap.getPrivacy().then(renderPrivacy).catch(() => renderPrivacy());
+  renderAnswerMode();
+  if (window.cap.setAnswerInApp) window.cap.setAnswerInApp(answerInApp);
   if (window.cap.getVersion) window.cap.getVersion().then((v) => { const e = $('homeVer'); if (e) e.textContent = 'v' + v + ' · Haru Mikage · Japan · 2026.8.15'; }).catch(() => {});
 })();
 
@@ -792,8 +996,8 @@ function applyMode() {
   if (window.cap.setMode) window.cap.setMode(mode);
 }
 document.querySelectorAll('.code-btn').forEach((b) => b.addEventListener('click', () => {
-  if (busy) { setBusy(false); return; }
-  setBusy(true, 'gptBtn');   // reuse the send spinner target
+  if (busy) return;
+  setBusy(true, b.id);
   window.cap.sendKeyword(b.dataset.cmd);
 }));
 applyMode();
@@ -825,15 +1029,15 @@ $('copyBtn').addEventListener('click', () => {
   const u = $('copyBtn').querySelector('use'); if (u) { u.setAttribute('href', '#i-check'); setTimeout(() => u.setAttribute('href', '#i-copy'), 550); }
 });
 function flashBtn(id) { const b = $(id); if (!b) return; b.classList.add('flash'); setTimeout(() => b.classList.remove('flash'), 220); }
-function setBusy(on, id) {
+function setBusy(on, id, timeoutMs) {
   busy = on;
   if (busyBtn) { const p = $(busyBtn); if (p) p.classList.remove('busy'); }   // clear previous spinner
   busyBtn = on ? (id || null) : null;
   if (on && busyBtn) { const b = $(busyBtn); if (b) b.classList.add('busy'); }
   if (busyTimer) { clearTimeout(busyTimer); busyTimer = null; }
-  if (on) busyTimer = setTimeout(() => setBusy(false), 9000);   // safety: never stay stuck
+  if (on) busyTimer = setTimeout(() => setBusy(false), timeoutMs || 9000);   // long timeout while streaming an in-app response
 }
-function trigger(action, btnId) { if (busy) { setBusy(false); return; } setBusy(true, btnId); window.cap.sendAction(action); }   // click while spinning -> stop
+function trigger(action, btnId) { if (busy) return; setBusy(true, btnId); window.cap.sendAction(action); }
 $('gptBtn').addEventListener('click', () => trigger('send', 'gptBtn'));
 $('aaBtn').addEventListener('click', () => trigger('aa', 'aaBtn'));
 if ($('aaCodeBtn')) $('aaCodeBtn').addEventListener('click', () => trigger('aa', 'aaCodeBtn'));   // Live Coding row: same aa action
@@ -861,7 +1065,7 @@ function captureResumeAnchor(actionId) {
     for (let i = 0; i < divs.length; i++) { if (ptextOf(divs[i]) === r.endContainer) { anchor = { paraIdx: i, offset: r.endOffset }; break; } }
   }
   if (!anchor) { const last = ptextOf(divs[divs.length - 1]); anchor = { paraIdx: divs.length - 1, offset: last ? last.textContent.length : 0 }; }
-  if (hadSel && (actionId === 'send' || actionId === 'aa' || actionId === 'simple' || actionId === 'compact' || actionId === 'paste')) {
+  if (hadSel && (actionId === 'send' || actionId === 'aa' || actionId === 'simple' || actionId === 'compact' || actionId === 'paste' || /^code[1-5]$/.test(actionId))) {
     sentMarks.push({ paraIdx: anchor.paraIdx, offset: anchor.offset, act: actionId }); if (sentMarks.length > 60) sentMarks.shift();
   }
   resumeAnchor = anchor;
@@ -911,7 +1115,13 @@ function selectToEnd() {
   setAutoscroll(true);   // selecting to the end means "keep following" -> turn autoscroll on
   scrollBottom();
 }
-if (window.cap.onGptResult) window.cap.onGptResult(() => setBusy(false));
+if (window.cap.onGptResult) window.cap.onGptResult((r) => {
+  if (r && r.returnToApp) {
+    if (!r.ok && (!r.requestId || r.requestId === answerRequestId)) failGptAnswer((r.detail && r.detail.error) || r.error || 'Could not send the request to ChatGPT.');
+    return;   // successful insertion is only an acknowledgement; the answer stream ends the busy state
+  }
+  setBusy(false);
+});
 if (window.cap.onAdvanceSelection) window.cap.onAdvanceSelection((id) => captureResumeAnchor(id));
 $('markBtn').addEventListener('click', () => { if (fullText()) window.cap.saveFile(fullText()).catch(() => {}); });
 function applyTopState() {
@@ -1354,6 +1564,7 @@ function showHelp() {
     '• Minimap on the right: drag to navigate; red marks show where you sent from\n\n' +
     'SEND TO CHATGPT (needs the Chrome extension + a bound tab)\n' +
     '• ↑ Send (F1): send the selection  ·  aa (F2): keyword + selection  ·  zz (F3): keyword only\n' +
+    '• Chat icon: OFF shows the reply in ChatGPT; ON keeps focus here and streams the reply beside the transcript\n' +
     '• ✎ Edit-before-send: paste without submitting  ·  Compact (F6): move the chat to a fresh tab\n' +
     '• The chain icon in ChatGPT binds the tab; the copy icon copies the last answer\n\n' +
     'GPT AUTO SCROLL (read-along)\n' +
@@ -1361,7 +1572,7 @@ function showHelp() {
     'OTHER\n' +
     '• Mic button: mute your mic system-wide (also a hotkey)  ·  its fill shows live input level\n' +
     '• Eye: Live Captions opacity, window opacity, keep-on-top\n' +
-    '• Gear: hotkeys, keywords, compact URL, stealth mode  ·  Save (bookmark): export the transcript');
+    '• Shield: privacy overlay + recovery shortcuts  ·  Gear: audio, ChatGPT actions and hotkeys  ·  Save: export the transcript');
 }
 $('helpBtn').addEventListener('click', showHelp);
 document.querySelectorAll('.act-help').forEach((b) => b.addEventListener('click', showHelp));
@@ -1382,7 +1593,6 @@ function setPromptEditing(on) {
   if ($('promptEdit')) $('promptEdit').classList.toggle('hidden', caPromptEditing);
   if ($('promptSave')) $('promptSave').classList.toggle('hidden', !caPromptEditing);
   if ($('promptCancel')) $('promptCancel').classList.toggle('hidden', !caPromptEditing);
-  if ($('promptReset')) $('promptReset').classList.toggle('hidden', caPromptEditing);
   if (caPromptEditing && text) { text.focus(); text.setSelectionRange(text.value.length, text.value.length); }
 }
 async function loadPrompts() {
@@ -1392,6 +1602,14 @@ async function loadPrompts() {
       caPrompts = (await window.cap.getPrompts()).map((p) => ({ ...p, originalText: p.text, text: Object.prototype.hasOwnProperty.call(edits, p.name) ? edits[p.name] : p.text }));
     } catch (e) { caPrompts = []; }
   }
+  // Open the prompt that matches the interview mode selected on the New Session page.
+  // If a mode does not have its own prompt yet, keep the current/Standard prompt.
+  const preferredName = mode === 'Live Coding'
+    ? 'Interview Prompt(Live Coding)'
+    : (mode === 'System Design' ? 'Interview Prompt(System Design)' : 'Interview Prompt(Standard)');
+  const preferredIdx = caPrompts.findIndex((p) => p.name === preferredName);
+  if (preferredIdx >= 0) caPromptIdx = preferredIdx;
+  else if (caPromptIdx >= caPrompts.length) caPromptIdx = 0;
   const tabs = $('promptTabs');
   if (tabs) {
     tabs.innerHTML = '';
@@ -1425,12 +1643,6 @@ if ($('promptSave')) $('promptSave').addEventListener('click', () => {
   if (p.text === p.originalText) delete edits[p.name]; else edits[p.name] = p.text;
   savePromptEdits(edits); setPromptEditing(false);
   const b = $('promptEdit'); b.textContent = 'Saved ✓'; setTimeout(() => { b.textContent = 'Edit'; }, 1200);
-});
-if ($('promptReset')) $('promptReset').addEventListener('click', () => {
-  const p = (caPrompts || [])[caPromptIdx]; if (!p || !confirm('Restore this prompt to its original text?')) return;
-  p.text = p.originalText;
-  const edits = loadPromptEdits(); delete edits[p.name]; savePromptEdits(edits); renderPrompt();
-  const b = $('promptReset'); b.textContent = 'Reset ✓'; setTimeout(() => { b.textContent = 'Reset'; }, 1200);
 });
 if ($('promptCopy')) $('promptCopy').addEventListener('click', () => {
   const p = (caPrompts || [])[caPromptIdx]; if (!p) return;

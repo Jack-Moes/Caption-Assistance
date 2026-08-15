@@ -1,7 +1,7 @@
 # Caption assistance Bridge (Chrome extension)
 
-Lets Caption assistance drive ChatGPT in Chrome: send the selected transcript, run your
-`aa`/`bb` prompts, and compact a long chat into a fresh window — all by hotkey.
+Lets Caption assistance drive ChatGPT in Chrome: send the selected transcript, run interview
+commands, optionally stream the answer back into the app, and compact a long chat.
 
 ## Install (one time)
 
@@ -13,6 +13,26 @@ Lets Caption assistance drive ChatGPT in Chrome: send the selected transcript, r
 That's it. The extension talks to Caption assistance over `http://127.0.0.1:17632` (local
 only). Open Caption assistance's **⚙ settings** — the status line shows **"Extension:
 connected ✓"** once it's talking.
+
+After updating this extension, click **Reload** on `chrome://extensions`, then refresh the bound
+ChatGPT tab once so the new content script is active.
+
+## Answer in app
+
+The chat-bubble button in the live-session title bar controls where replies appear:
+
+- **Off:** the bound ChatGPT tab is focused and the reply stays there.
+- **On:** the current window keeps focus and the bound tab streams the reply to Caption assistance.
+
+When it is on, the transcript stays on the left and the streamed GPT answer appears on the right.
+The ChatGPT tab must remain open, signed in, and bound. Normal background sends keep the current
+window and web tab unchanged. Answers are observed from the ChatGPT page and returned over localhost;
+no extra external server is used.
+
+Chrome can suspend a long-idle tab. If the app reports that the bound tab is suspended, use the
+**Refresh** button beside Copy. Refresh first checks whether the original question already exists,
+reconnects answer monitoring, and only resends when the request is confirmed absent. A suspended tab
+is activated briefly without focusing its Chrome window, then the previously active tab is restored.
 
 ## Actions (default hotkeys — all rebindable in ⚙ settings)
 

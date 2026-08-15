@@ -66,6 +66,22 @@ svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-wid
   -webkit-app-region: no-drag; transition: background .15s, color .15s; }
 .wb:hover { background: rgba(255,255,255,.14); color: #fff; }
 .wb.wb-on { background: rgba(255,255,255,.22); color: #fff; }
+.wb.privacy-on { color: #58d8ff; background: rgba(44,167,255,.12); }
+.wb.privacy-click { color: #ffba59; background: rgba(255,186,89,.14); }
+.wb.privacy-error { color: #ff7180; background: rgba(255,113,128,.13); }
+.wb.answer-mode { position:relative; }
+.wb.answer-mode.on { color:#62dcff; background:rgba(44,167,255,.14); }
+.wb.answer-mode.waiting { color:#ffd166; background:rgba(255,209,102,.12); }
+.wb.answer-mode.error { color:#ff7180; background:rgba(255,113,128,.13); }
+.answer-mode-dot { position:absolute; right:6px; bottom:8px; width:5px; height:5px; border-radius:50%; background:#68758a; box-shadow:0 0 0 1px #070b17; }
+.answer-mode.on .answer-mode-dot { background:#62dcff; box-shadow:0 0 7px rgba(98,220,255,.9); }
+.answer-mode.waiting .answer-mode-dot { background:#ffd166; animation:answerpulse .9s ease-in-out infinite; }
+.answer-mode.error .answer-mode-dot { background:#ff7180; }
+@keyframes answerpulse { 50% { opacity:.35; transform:scale(.72); } }
+.bar-conn { align-self:center; height:24px; display:inline-flex; align-items:center; margin:0 5px 0 8px; padding:0 9px;
+  border:1px solid #293550; border-radius:12px; color:#73839b; font-size:10px; font-weight:700; white-space:nowrap; }
+.bar-conn.on { color:#66d7ff; border-color:rgba(44,167,255,.45); background:rgba(44,167,255,.09); }
+.bar-conn.warn { color:#ffba59; border-color:rgba(255,186,89,.42); background:rgba(255,186,89,.08); }
 #helpBtn, .act-help { display: none; }   /* help button hidden for now */
 /* custom-styled selects: native arrow removed, own chevron, focus ring, theme-aware */
 .mic-select, .set-mic {
@@ -274,8 +290,29 @@ body.dark .mic-select option, body.dark .set-mic option { background: #1a252f; c
 
 /* ---------- settings popover (hotkeys / keywords / compact / stealth) ---------- */
 /* more specific than .opacity-pop{width:224px} so this width actually wins; capped to the viewport so it never overflows */
-.opacity-pop.settings-pop { width: min(260px, calc(100vw - 16px)); max-height: calc(100vh - 46px); overflow-y: auto; overflow-x: hidden; }
-.browser-mic-note { font-size: 10.5px; color: var(--sub); opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.opacity-pop.settings-pop { width: min(320px, calc(100vw - 16px)); max-height: calc(100vh - 46px); overflow-y: auto; overflow-x: hidden; }
+.opacity-pop.privacy-pop { width:min(320px, calc(100vw - 16px)); padding:0; border:0; background:transparent; }
+.privacy-card { padding: 12px; border: 1px solid rgba(35,150,255,.28); border-radius: 12px; background:linear-gradient(145deg,#f7fbff,#f5f3ff); box-shadow:0 12px 34px rgba(0,0,0,.25); }
+.privacy-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.privacy-title { color:var(--text); font-size:13.5px; font-weight:800; }
+.privacy-sub { color:var(--sub); font-size:10px; line-height:1.35; margin-top:3px; }
+.privacy-options { margin-top:11px; transition:opacity .15s; }
+.privacy-options.is-disabled { opacity:.72; pointer-events:none; }
+.privacy-option { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 0; cursor:pointer; }
+.privacy-option span { min-width:0; }
+.privacy-option b { display:block; color:var(--text); font-size:11.5px; font-weight:700; }
+.privacy-option small { display:block; color:var(--sub); font-size:9.5px; line-height:1.35; margin-top:2px; }
+.privacy-option input { width:15px; height:15px; accent-color:var(--teal); flex:none; cursor:pointer; }
+.privacy-shortcuts { border-top:1px solid var(--border); margin-top:6px; padding-top:10px; }
+.privacy-shortcuts .set-row { margin-bottom:7px; }
+.privacy-shortcuts .set-lbl { font-size:10.5px; }
+.privacy-hk { min-width:118px; font-size:9.5px; white-space:nowrap; }
+.privacy-status { margin-top:9px; padding-top:8px; border-top:1px solid var(--border); color:var(--sub); font-size:9.5px; line-height:1.4; }
+.privacy-status.ok { color:#42c8ba; }
+.privacy-status.warn { color:#ffb65c; }
+body.dark .privacy-card { background:linear-gradient(145deg,#101b35,#101429); border-color:rgba(70,169,255,.38); box-shadow:0 14px 38px rgba(0,0,0,.58); }
+body.dark .opacity-pop.privacy-pop { background:transparent; }
+.browser-mic-note { font-size: 10.5px; color: var(--sub); opacity: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 .set-select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff; color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer; -webkit-app-region: no-drag; }
 .set-select:focus { outline: none; border-color: var(--teal); }
 body.dark .set-select { background: #22303c; color: var(--text); border-color: #33424f; }
@@ -299,11 +336,32 @@ body.dark .set-select { background: #22303c; color: var(--text); border-color: #
 .set-status.ok { color: var(--teal); font-weight: 600; }
 .set-status.bad { color: var(--red); font-weight: 600; }
 body.dark .set-kw, body.dark .set-url { background: #141d24; color: var(--text); border-color: var(--border); }
+body.dark .scroll-number { background:#111a2d; color:#f4f8ff; -webkit-text-fill-color:#f4f8ff; border-color:#3b4d70 !important; opacity:1; font-weight:700; caret-color:#76d9ff; }
+body.dark .scroll-number:hover { border-color:#4d78a8 !important; }
+body.dark .scroll-number:focus { outline:none; border-color:#2ca7ff !important; box-shadow:0 0 0 2px rgba(44,167,255,.2); }
 body.dark .hk { background: #143139; color: var(--welcome); border-color: #2c6b67; }
 body.dark .hk.taken { background: #3a1f22; color: #ff9a9a; border-color: #5c2c2c; }
 /* caption + minimap live side by side; the wrap owns the vertical flex slot */
 .caption-wrap { flex: 1; min-height: 0; display: flex; align-items: stretch; }
 .caption-wrap .caption { flex: 1; }
+.gpt-answer-view { flex:0 0 50%; min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; border-left:1px solid #2b3b60; background:#0a1020; }
+.gpt-answer-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 11px; border-bottom:1px solid #2b3b60; background:#080d1b; color:#f2f6ff; font-size:12px; }
+.gpt-answer-head > div { display:flex; align-items:center; gap:9px; min-width:0; }
+.gpt-answer-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
+.gpt-answer-status { color:#8ea2bf; font-size:9.5px; font-weight:600; white-space:nowrap; }
+.gpt-answer-status.waiting { color:#ffd166; }
+.gpt-answer-status.done { color:#62dcff; }
+.gpt-answer-status.error { color:#ff8290; }
+.answer-copy { display:flex; align-items:center; gap:5px; border:1px solid #2c6b67; border-radius:7px; padding:4px 8px; background:#143139; color:#72e0d7; font:700 9.5px 'Plus Jakarta Sans','Segoe UI',sans-serif; cursor:pointer; }
+.answer-copy:hover { filter:brightness(1.15); }
+.answer-copy:disabled { opacity:1; cursor:not-allowed; filter:none; background:#101827; color:#8398b6; border-color:#293955; }
+.answer-refresh.recovering .ic { animation:caspin .7s linear infinite; }
+.answer-copy .ic { width:13px; height:13px; }
+.gpt-answer-text { flex:1; min-height:0; overflow:auto; margin:0; padding:12px 14px 18px; background:#0d1426; color:#e7efff; font:500 13.5px/1.62 'DM Mono',Consolas,monospace; white-space:pre-wrap; overflow-wrap:anywhere; user-select:text; -webkit-user-select:text; }
+.gpt-answer-text.empty { color:#7f91ae; font-family:'Plus Jakarta Sans','Segoe UI',sans-serif; font-weight:500; }
+.gpt-answer-text::selection { background:#3657a8; color:#fff; }
+.gpt-answer-text::-webkit-scrollbar { width:10px; }
+.gpt-answer-text::-webkit-scrollbar-thumb { background:rgba(170,190,220,.34); border:3px solid transparent; background-clip:content-box; border-radius:7px; }
 /* minimap: a scaled-down overview of the whole transcript with a draggable viewport box */
 .minimap { flex: 0 0 62px; position: relative; overflow: hidden; cursor: pointer;
   border-left: 1px solid var(--border); background: rgba(127,141,153,.04); }
@@ -407,6 +465,46 @@ body.dark .prompt-text.editing { background: #101a31; box-shadow: inset 0 0 0 2p
 body.dark .prompt-text::selection { background: #3657a8; color: #fff; }
 body.dark .prompt-actions .hk { background: #111d3b; border-color: #285b92; color: #bfe8ff; }
 body.dark .prompt-actions .prompt-save { background: #247fce; border-color: #41b5ff; color: #fff; }
+
+/* High-contrast dark controls. Base replay/key-input styles use a white surface, while the fixed
+   app theme supplies light text variables; without these overrides the labels become white-on-white. */
+body.dark .replay-bar { background:#080d1b; border-top-color:#2b3b60; }
+body.dark .rp-btn, body.dark .rp-speed {
+  background:#111a2d; color:#f4f8ff; -webkit-text-fill-color:#f4f8ff;
+  border-color:#3b4d70; color-scheme:dark;
+}
+body.dark .rp-btn:hover { background:#1b2945; border-color:#5b86b7; }
+body.dark .rp-btn:focus-visible, body.dark .rp-speed:focus-visible { outline:2px solid #62c8ff; outline-offset:2px; }
+body.dark .rp-speed option { background:#111a2d; color:#f4f8ff; }
+body.dark .rp-time { color:#a9c5e8; font-weight:600; }
+body.dark .rp-seek { accent-color:#35adff; }
+
+body.dark #keyInput {
+  background:#111a2d !important; color:#f4f8ff !important; -webkit-text-fill-color:#f4f8ff;
+  border-color:#3b4d70 !important; caret-color:#76d9ff; color-scheme:dark;
+}
+body.dark #keyInput:focus { outline:none; border-color:#2ca7ff !important; box-shadow:0 0 0 2px rgba(44,167,255,.2); }
+body.dark input::placeholder, body.dark textarea::placeholder { color:#91a4bf; -webkit-text-fill-color:#91a4bf; opacity:1; }
+body.dark .set-mic:disabled, body.dark .set-select:disabled, body.dark .set-kw:disabled,
+body.dark .set-url:disabled, body.dark .rp-speed:disabled, body.dark .m-input:disabled {
+  background:#0d1426; color:#94a7c2; -webkit-text-fill-color:#94a7c2; border-color:#2a3857; opacity:1;
+}
+body.dark .settings-pop .help-note { color:#a9bad1; opacity:.82 !important; }
+
+/* Bright cyan remains the accent for icons/text. Filled controls use a deeper blue so white labels
+   remain readable at small sizes. */
+body.dark .primary, body.dark .ghost.send, body.dark .ghost.gkey,
+body.dark .prompt-tab.active, body.dark .card.selected, body.dark .rp-btn.on {
+  background:#1f75c8; border-color:#3aaeff; color:#fff; -webkit-text-fill-color:#fff;
+}
+body.dark .primary:hover, body.dark .ghost.send:hover, body.dark .ghost.gkey:hover,
+body.dark .prompt-tab.active:hover, body.dark .rp-btn.on:hover { background:#1768ad; border-color:#62c8ff; }
+body.dark .pill:not(.off) { background:#1f75c8; color:#fff; }
+body.dark .pill:not(.off):hover { background:#1768ad; }
+body.dark .card.selected .card-ic { background:#fff; color:#1768ad; }
+body.dark .prompt-actions .prompt-save { background:#1f6fb8; border-color:#62c8ff; color:#fff; }
+body.dark .end { background:#c83a48; color:#fff; }
+body.dark .end:hover { background:#ac303d; }
 
 /* ---------- modals ---------- */
 .overlay { position: fixed; inset: 0; background: rgba(20,29,36,.45); display: flex; align-items: center; justify-content: center; z-index: 50; }

@@ -5,6 +5,14 @@ How to Run Caption assistance
 2. When Windows Live Captions opens, allow microphone access.
 3. Install the Chrome extension below only if you want to use automatic input and sending with ChatGPT.
 
+Privacy Recovery
+----------------
+
+- Privacy overlay defaults to OFF. Configure it from the gear button.
+- Default click-through on/off shortcut: Ctrl+Shift+X.
+- Click-through state is not saved and is cleared by restarting the app.
+- If a recovery shortcut does not work, double-click Run-Caption assistance-Safe.cmd. This starts the app with privacy controls disabled for that run and forces the window to show.
+
 Install or Update the Chrome Extension
 --------------------------------------
 

@@ -9,13 +9,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return;
   log('message:', msg.action);
   if (msg.action === 'insertAndSend') {
-    insertAndSend(msg.text, msg.submit).then((ok) => sendResponse({ ok: ok })).catch((e) => { warn('insertAndSend error:', e); sendResponse({ ok: false, error: String(e) }); });
+    insertAndSend(msg.text, msg.submit, msg).then((ok) => sendResponse({ ok: ok })).catch((e) => {
+      warn('insertAndSend error:', e);
+      if (msg.returnToApp && msg.requestId) reportAnswer({ requestId: msg.requestId, phase: 'error', text: '', error: String((e && e.message) || e), seq: 999999 });
+      sendResponse({ ok: false, error: String(e) });
+    });
     return true;   // async response
   }
   if (msg.action === 'scrape') {
     try { const t = scrapeConversation(); log('scrape ->', t.length, 'chars'); sendResponse({ ok: true, text: t }); }
     catch (e) { warn('scrape error:', e); sendResponse({ ok: false, error: String(e) }); }
     return;
+  }
+  if (msg.action === 'answerSnapshot') {
+    try {
+      const b = answerBaseline();
+      sendResponse({ ok: true, count: b.count, text: b.text, generating: generationActive() });
+    } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
+    return;
+  }
+  if (msg.action === 'recoverAnswer') {
+    recoverAnswer(msg.requestId, msg.expectedText).then((r) => sendResponse(r)).catch((e) => sendResponse({ ok: false, error: String((e && e.message) || e) }));
+    return true;
   }
   if (msg.action === 'refreshBind') { refreshBindState(); return; }
   if (msg.action === 'teleMic') { if (caMicSource === 'app' || !haveWebSpeech()) { try { teleMic(msg); } catch (e) { log('teleMic error', e); } } return; }   // use the bridge mic when the app streams cloud transcription, else fall back to Chrome speech
@@ -54,8 +69,130 @@ async function waitFor(fn, ms) {
   return null;
 }
 
-async function insertAndSend(text, submit) {
+let caAnswerWatchToken = 0, caAnswerWatchCleanup = null;
+function assistantNodes() { return Array.from(document.querySelectorAll('[data-message-author-role="assistant"]')); }
+function answerTextOf(node) {
+  if (!node) return '';
+  const body = node.querySelector('.markdown') || node;
+  return (body.innerText || body.textContent || '').trim();
+}
+function answerBaseline() {
+  const nodes = assistantNodes();
+  return { count: nodes.length, node: nodes.length ? nodes[nodes.length - 1] : null, text: nodes.length ? answerTextOf(nodes[nodes.length - 1]) : '' };
+}
+function generationActive() {
+  return !!(document.querySelector('button[data-testid="stop-button"]')
+    || document.querySelector('button[aria-label*="Stop generating" i]')
+    || document.querySelector('button[aria-label*="Stop streaming" i]'));
+}
+function reportAnswer(payload) {
+  try {
+    const p = chrome.runtime.sendMessage({ action: 'gptAnswer', payload: payload });
+    if (p && p.catch) p.catch(() => {});
+  } catch (e) {}
+}
+function messageNodes() { return Array.from(document.querySelectorAll('[data-message-author-role]')); }
+function normalizePromptText(text) { return String(text || '').replace(/\s+/g, ' ').trim(); }
+function findMatchingUserNode(expectedText) {
+  const expected = normalizePromptText(expectedText);
+  if (!expected) return null;
+  const nodes = messageNodes();
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    if (nodes[i].getAttribute('data-message-author-role') !== 'user') continue;
+    if (normalizePromptText(nodes[i].innerText || nodes[i].textContent) === expected) return nodes[i];
+  }
+  return null;
+}
+function assistantAfterUser(userNode) {
+  if (!userNode) return null;
+  const nodes = messageNodes();
+  const idx = nodes.indexOf(userNode);
+  if (idx < 0) return null;
+  for (let i = idx + 1; i < nodes.length; i++) if (nodes[i].getAttribute('data-message-author-role') === 'assistant') return nodes[i];
+  return null;
+}
+function startAssistantAnswerWatch(requestId, baseline, userNode, recovered) {
+  if (caAnswerWatchCleanup) caAnswerWatchCleanup();
+  const token = ++caAnswerWatchToken;
+  const seqBase = Date.now() * 1000;
+  let seq = 0, lastText = '', lastSent = '', lastChangeAt = Date.now(), lastPostAt = 0;
+  let inspectTimer = null, settleTimer = null, closed = false;
+  const startedAt = Date.now();
+  const nextSeq = () => seqBase + (seq++);
+  const finish = (phase, text, error) => {
+    if (closed || token !== caAnswerWatchToken) return;
+    closed = true; cleanup();
+    reportAnswer({ requestId, phase, text: text || '', error: error || '', seq: nextSeq() });
+  };
+  const cleanup = () => {
+    if (observer) observer.disconnect();
+    if (inspectTimer) clearTimeout(inspectTimer);
+    if (settleTimer) clearTimeout(settleTimer);
+    clearTimeout(noAnswerTimer); clearTimeout(limitTimer);
+    if (caAnswerWatchCleanup === cleanup) caAnswerWatchCleanup = null;
+  };
+  const inspect = () => {
+    inspectTimer = null;
+    if (closed || token !== caAnswerWatchToken) return;
+    const nodes = assistantNodes();
+    const node = userNode ? assistantAfterUser(userNode) : (nodes.length ? nodes[nodes.length - 1] : null);
+    const text = answerTextOf(node);
+    const isNew = !!node && (userNode || nodes.length > baseline.count || node !== baseline.node || text !== baseline.text);
+    const active = generationActive();
+    const now = Date.now();
+    const changed = !!(isNew && text && text !== lastText);
+    if (changed) {
+      lastText = text; lastChangeAt = now;
+      if (now - lastPostAt >= 120) {
+        lastPostAt = now; lastSent = text;
+        reportAnswer({ requestId, phase: 'stream', text, error: '', seq: nextSeq() });
+      }
+    }
+    if ((changed || active) && settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+    if (isNew && lastText && !active && !settleTimer) {
+      settleTimer = setTimeout(() => {
+        settleTimer = null;
+        const current = answerTextOf(userNode ? assistantAfterUser(userNode) : (assistantNodes().slice(-1)[0] || null));
+        if (!generationActive() && current && current === lastText && Date.now() - lastChangeAt >= 1800) {
+          if (current !== lastSent) reportAnswer({ requestId, phase: 'stream', text: current, error: '', seq: nextSeq() });
+          finish('final', current, '');
+        } else scheduleInspect(80);
+      }, 1900);
+    }
+  };
+  const scheduleInspect = (delay) => {
+    if (closed || inspectTimer) return;
+    inspectTimer = setTimeout(inspect, delay == null ? 60 : delay);
+  };
+  const observer = new MutationObserver(() => scheduleInspect(60));
+  const noAnswerTimer = setTimeout(() => {
+    if (!lastText && !generationActive()) finish('error', '', 'No ChatGPT response was detected. Use Refresh to safely reconnect this request.');
+  }, 45000);
+  const limitTimer = setTimeout(() => {
+    if (lastText) finish('final', lastText, 'Response monitoring reached its time limit.');
+    else finish('error', '', 'Timed out while waiting for ChatGPT.');
+  }, 180000);
+  caAnswerWatchCleanup = cleanup;
+  observer.observe(document.documentElement || document.body, { subtree: true, childList: true, characterData: true });
+  reportAnswer({ requestId, phase: recovered ? 'recovered' : 'start', text: '', error: '', seq: nextSeq() });
+  inspect();
+}
+async function recoverAnswer(requestId, expectedText) {
+  let userNode = findMatchingUserNode(expectedText);
+  const until = Date.now() + 2000;
+  while (!userNode && Date.now() < until) { await sleep(100); userNode = findMatchingUserNode(expectedText); }
+  if (!userNode) return { ok: true, found: false };
+  const baseline = { count: 0, node: null, text: '' };
+  startAssistantAnswerWatch(requestId, baseline, userNode, true);
+  return { ok: true, found: true, hasAnswer: !!answerTextOf(assistantAfterUser(userNode)), generating: generationActive() };
+}
+
+async function insertAndSend(text, submit, meta) {
   log('insertAndSend', (text || '').length, 'chars', 'submit', submit !== false);
+  const baseline = (submit !== false && meta && meta.returnToApp && meta.requestId) ? answerBaseline() : null;
+  const userCountBefore = document.querySelectorAll('[data-message-author-role="user"]').length;
+  if (baseline && generationActive()) throw new Error('ChatGPT is already generating a response. Wait for it to finish, then try again.');
+  if (submit !== false && !baseline) caAnswerWatchToken++;   // a normal foreground send supersedes any older background watcher
   const el = await waitFor(findComposer, 8000);
   if (!el) { warn('composer NOT found (selectors may be stale)'); throw new Error('composer not found'); }
   log('composer found:', el.tagName, el.id || el.className);
@@ -90,11 +227,20 @@ async function insertAndSend(text, submit) {
   // React normally enables Send on the next render; a short yield is enough and avoids a fixed 250 ms delay.
   await sleep(35);
   const btn = await waitFor(() => { const b = findSendButton(); return (b && !b.disabled) ? b : null; }, 5000);
-  if (btn) { log('clicking send button'); btn.click(); return true; }
+  if (btn) {
+    log('clicking send button'); btn.click();
+    const confirmed = await waitFor(() => document.querySelectorAll('[data-message-author-role="user"]').length > userCountBefore || generationActive(), 3500);
+    if (!confirmed) throw new Error('ChatGPT did not confirm that the question was submitted. Use Refresh; do not press Send repeatedly.');
+    if (baseline) startAssistantAnswerWatch(meta.requestId, baseline, null, false);
+    return true;
+  }
   warn('send button not found/enabled — falling back to Enter key');
   const opts = { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13, which: 13 };
   el.dispatchEvent(new KeyboardEvent('keydown', opts));
   el.dispatchEvent(new KeyboardEvent('keyup', opts));
+  const confirmed = await waitFor(() => document.querySelectorAll('[data-message-author-role="user"]').length > userCountBefore || generationActive(), 3500);
+  if (!confirmed) throw new Error('ChatGPT did not confirm that the question was submitted. Use Refresh; do not press Send repeatedly.');
+  if (baseline) startAssistantAnswerWatch(meta.requestId, baseline, null, false);
   return true;
 }
 
@@ -285,10 +431,16 @@ function ensureScrollButton() {
 // Position: multi-line composer -> next to the "+" (bottom row is clear); one-line -> above the box
 ensureBindButton(); ensureCopyButton(); ensureScrollButton();
 setInterval(() => { ensureBindButton(); ensureCopyButton(); ensureScrollButton(); if ((caTick++ % 8) === 0) refreshBindState(); }, 600);   // reposition ~0.6s, refresh state ~5s
-setInterval(() => {
-  if (ctxValid()) { try { const p = chrome.runtime.sendMessage({ action: 'tick' }); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
-  else maybeAutoReload();   // extension was reloaded -> refresh this tab to get the new content script
-}, 80);   // low-latency mode: drive the worker's short poll at ~12.5 Hz
+// Command delivery uses the service worker's pending /wait request. This adaptive heartbeat is now
+// state-only: fast enough for read-along while it is active, quiet while idle.
+(function bridgeHeartbeat() {
+  const delay = caBound && caTeleOn ? 250 : (caBound ? 1200 : 3000);
+  setTimeout(() => {
+    if (ctxValid()) { try { const p = chrome.runtime.sendMessage({ action: 'tick' }); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+    else maybeAutoReload();
+    bridgeHeartbeat();
+  }, delay);
+})();
 
 // ================= read-along teleprompter =================
 // Runs the PhonoDTW engine (match-engine.js, loaded before this script) against the LAST assistant
