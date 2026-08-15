@@ -1,0 +1,9 @@
+{
+  "name": "caption.assistance",
+  "productName": "Caption assistance",
+  "version": "1.0.2",
+  "description": "Caption assistance - selectable Windows Live Captions (Electron shell over Live Captions)",
+  "author": "Haru Mikage, Japan",
+  "buildDate": "2026.8.15",
+  "main": "main.js"
+}

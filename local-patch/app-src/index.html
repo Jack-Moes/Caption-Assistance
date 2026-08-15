@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' wss://api.openai.com https://api.openai.com wss://api.deepgram.com https://api.deepgram.com wss://api.elevenlabs.io https://api.elevenlabs.io wss://eu.rt.speechmatics.com https://mp.speechmatics.com;" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Caption assistance</title>
+</head>
+<body class="dark">
+<!-- reusable SVG icon symbols -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-popout" viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+    <symbol id="i-min" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
+    <symbol id="i-mic-off" viewBox="0 0 24 24"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="13" rx="2.5"/><line x1="7" y1="10" x2="17" y2="10"/><line x1="7" y1="13.5" x2="13" y2="13.5"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></symbol>
+    <symbol id="i-briefcase" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></symbol>
+    <symbol id="i-readalong" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="10" x2="15" y2="10"/><line x1="4" y1="14" x2="18" y2="14"/><polyline points="9 18 12 21 15 18"/><line x1="12" y1="21" x2="12" y2="15"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="5"/><polyline points="6 11 12 5 18 11"/></symbol>
+    <symbol id="i-compact" viewBox="0 0 24 24"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></symbol>
+    <symbol id="i-toend" viewBox="0 0 24 24"><polyline points="7 6 12 11 17 6"/><polyline points="7 12 12 17 17 12"/><line x1="6" y1="20" x2="18" y2="20"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10v1a7 7 0 0 0 14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></symbol>
+    <symbol id="i-speaker" viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+    <symbol id="i-check-c" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V3h6v3"/><line x1="10" y1="10" x2="10" y2="17"/><line x1="14" y1="10" x2="14" y2="17"/></symbol>
+  </defs>
+</svg>
+
+<div class="app">
+
+  <!-- ===================== HOME ===================== -->
+  <section id="home" class="screen">
+    <header class="bar drag">
+      <div class="spacer"></div>
+      <div class="winbtns nodrag">
+        <button class="wb act-help" title="About"><svg class="ic"><use href="#i-help"/></svg></button>
+        <button class="wb" id="min1" title="Minimise"><svg class="ic"><use href="#i-min"/></svg></button>
+        <button class="wb wclose" id="close1" title="Close"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+    </header>
+    <div class="home-body">
+      <nav class="sidebar">
+        <button class="side active" data-nav="home" title="Home"><svg class="ic"><use href="#i-home"/></svg></button>
+        <button class="side" data-nav="new" title="New session"><svg class="ic"><use href="#i-plus"/></svg></button>
+        <button class="side" data-nav="prompts" title="Default prompts"><svg class="ic"><use href="#i-chat"/></svg></button>
+      </nav>
+      <div class="home-main">
+        <div class="mint">
+          <div class="skel">
+            <span></span><span></span><span></span><span></span><span></span>
+            <span class="s2"></span><span class="s2"></span>
+          </div>
+          <h1>Caption assistance</h1>
+          <p>Create a new session, or review and edit your existing transcripts from your library</p>
+          <button class="primary" id="startNew"><svg class="ic sp"><use href="#i-sparkle"/></svg> Start a new session</button>
+          <div class="home-ver" id="homeVer"></div>
+        </div>
+        <div class="recent">
+          <div class="recent-box">
+            <div class="recent-h">Most recent sessions</div>
+            <div id="recentList" class="recent-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== NEW SESSION ===================== -->
+  <section id="new" class="screen hidden">
+    <header class="bar drag">
+      <div class="spacer"></div>
+      <div class="winbtns nodrag">
+        <button class="wb act-help" title="About"><svg class="ic"><use href="#i-help"/></svg></button>
+        <button class="wb" id="min2" title="Minimise"><svg class="ic"><use href="#i-min"/></svg></button>
+        <button class="wb wclose" id="close2" title="Close"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+    </header>
+    <div class="new-body">
+      <nav class="sidebar">
+        <button class="side" data-nav="home" title="Home"><svg class="ic"><use href="#i-home"/></svg></button>
+        <button class="side" data-nav="new" title="New session"><svg class="ic"><use href="#i-plus"/></svg></button>
+        <button class="side" data-nav="prompts" title="Default prompts"><svg class="ic"><use href="#i-chat"/></svg></button>
+      </nav>
+      <div class="new-main">
+        <button class="back" id="backHome"><svg class="ic bk"><use href="#i-back"/></svg> Back</button>
+        <div class="step-wrap">
+          <div class="step"><svg class="ic"><use href="#i-speaker"/></svg></div>
+          <div class="step-t">STEP 2 OF 2</div>
+          <h2>Choose your interview mode</h2>
+        </div>
+        <div class="cards">
+          <button class="card selected" data-mode="Standard">
+            <div class="card-top"><div class="card-ic"><svg class="ic"><use href="#i-chat"/></svg></div></div>
+            <div class="card-body">
+              <div class="card-t">Standard</div>
+              <div class="card-d">General interview Q&amp;A support</div>
+            </div>
+          </button>
+          <button class="card" data-mode="Live Coding">
+            <div class="card-top"><div class="card-ic"><svg class="ic"><use href="#i-code"/></svg></div></div>
+            <div class="card-body">
+              <div class="card-t">Live Coding</div>
+              <div class="card-d">Algorithms &amp; coding problems</div>
+            </div>
+          </button>
+          <button class="card" data-mode="System Design">
+            <div class="card-top"><div class="card-ic"><svg class="ic"><use href="#i-grid"/></svg></div></div>
+            <div class="card-body">
+              <div class="card-t">System Design</div>
+              <div class="card-d">Architecture &amp; trade-offs</div>
+            </div>
+          </button>
+        </div>
+        <div class="setup-mic-row">
+          <span class="setup-mic-lbl"><svg class="ic mic-ic"><use href="#i-mic"/></svg> Microphone</span>
+          <select class="set-mic setup-mic" id="micSelect0" title="Microphone the mute button targets"></select>
+        </div>
+        <button class="primary" id="startSession"><svg class="ic sp"><use href="#i-sparkle"/></svg> Start Session</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== DEFAULT PROMPTS ===================== -->
+  <section id="prompts" class="screen hidden">
+    <header class="bar drag">
+      <div class="spacer"></div>
+      <div class="winbtns nodrag">
+        <button class="wb act-help" title="About"><svg class="ic"><use href="#i-help"/></svg></button>
+        <button class="wb" id="min4" title="Minimise"><svg class="ic"><use href="#i-min"/></svg></button>
+        <button class="wb wclose" id="close4" title="Close"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+    </header>
+    <div class="home-body">
+      <nav class="sidebar">
+        <button class="side" data-nav="home" title="Home"><svg class="ic"><use href="#i-home"/></svg></button>
+        <button class="side" data-nav="new" title="New session"><svg class="ic"><use href="#i-plus"/></svg></button>
+        <button class="side active" data-nav="prompts" title="Default prompts"><svg class="ic"><use href="#i-chat"/></svg></button>
+      </nav>
+      <div class="prompts-main">
+        <div class="prompts-head">
+          <h2>Default prompts</h2>
+          <p>Paste one into a fresh ChatGPT chat (with the job description + your resume) to prime the session, then use the aa / ss / zz buttons during the interview.</p>
+        </div>
+        <div class="prompt-tabs" id="promptTabs"></div>
+        <div class="prompt-box">
+          <div class="prompt-box-h">
+            <span id="promptName">Interview Prompt(Standard)</span>
+            <div class="prompt-actions">
+              <button class="hk" id="promptEdit">Edit</button>
+              <button class="hk prompt-save hidden" id="promptSave">Save</button>
+              <button class="hk hidden" id="promptCancel">Cancel</button>
+              <button class="hk" id="promptReset" title="Restore the bundled prompt">Reset</button>
+              <button class="hk" id="promptCopy">Copy</button>
+            </div>
+          </div>
+          <textarea class="prompt-text" id="promptText" readonly spellcheck="false">Loading…</textarea>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== LIVE ===================== -->
+  <section id="live" class="screen hidden">
+    <header class="bar live drag">
+      <div class="live-left nodrag">
+        <span class="dot" id="dot"></span>
+        <span class="timer" id="timer">00:00</span>
+      </div>
+      <div class="spacer"></div>
+      <div class="winbtns nodrag">
+        <button class="wb" id="srcBtn" title="Audio shown: Speaker / You / Both"><svg class="ic"><use href="#i-speaker" id="srcUse"/></svg></button>
+        <button class="wb" id="scrollBtn" title="GPT auto scroll (read-along)"><svg class="ic"><use href="#i-readalong"/></svg></button>
+        <button class="wb" id="markBtn" title="Save transcript"><svg class="ic"><use href="#i-bookmark"/></svg></button>
+        <button class="wb" id="dimBtn" title="Live Captions opacity, window opacity &amp; keep-on-top"><svg class="ic"><use href="#i-eye"/></svg></button>
+        <button class="wb" id="settingsBtn" title="Hotkeys &amp; settings"><svg class="ic"><use href="#i-gear"/></svg></button>
+        <button class="wb" id="helpBtn" title="About"><svg class="ic"><use href="#i-help"/></svg></button>
+        <button class="end wb-end" id="endBtn" title="End session"><svg class="ic sq"><use href="#i-stop"/></svg></button>
+        <button class="wb" id="min3" title="Minimise"><svg class="ic"><use href="#i-min"/></svg></button>
+        <button class="wb wclose" id="close3" title="Close"><svg class="ic"><use href="#i-close"/></svg></button>
+      </div>
+    </header>
+    <div class="live-tool">
+      <span class="ts" id="ts">00:00</span>
+      <span id="gptConn" class="gpt-conn" title="ChatGPT bridge connection">● ChatGPT</span>
+      <select class="mic-select" id="micSelect" title="Microphone the mute button targets"></select>
+      <span id="browserMicNote" class="browser-mic-note" title="Microphone the bound Chrome tab is using"></span>
+    </div>
+    <div class="caption-wrap">
+      <div class="caption" id="caption"></div>
+      <div class="minimap" id="minimap"><div class="mini-content" id="miniContent"></div><div class="mini-sel" id="miniSel"></div><div class="mini-view" id="miniView"></div></div>
+    </div>
+    <div class="replay-bar hidden" id="replayBar">
+      <button class="rp-btn rp-play" id="rpPlay" title="Play / Pause (Space)">&#9654;</button>
+      <button class="rp-btn" id="rpBack" title="Back 10s">&#171;10</button>
+      <button class="rp-btn" id="rpFwd" title="Forward 10s">10&#187;</button>
+      <span class="rp-time" id="rpCur">00:00</span>
+      <input class="rp-seek" id="rpSeek" type="range" min="0" max="1000" value="0" step="1" title="Seek" />
+      <span class="rp-time" id="rpDur">00:00</span>
+      <select class="rp-speed" id="rpSpeed" title="Playback speed">
+        <option value="1">1&#215;</option><option value="1.25">1.25&#215;</option><option value="1.5">1.5&#215;</option><option value="2">2&#215;</option>
+      </select>
+      <button class="rp-btn on" id="rpScroll" title="Auto-scroll the transcript with playback">&#8595;</button>
+      <audio id="rpAudio" preload="auto"></audio>
+    </div>
+    <div class="live-foot">
+      <button class="pill" id="pill">AutoScroll On</button>
+      <div class="tool-btns">
+        <button class="ghost mic" id="micBtn" title="Mute the microphone system-wide (stops it reaching every app, incl. meetings)"><svg class="ic"><use href="#i-mic" id="micUse"/></svg></button>
+        <button class="ghost teal" id="copyBtn" title="Copy only the selected text"><svg class="ic"><use href="#i-copy"/></svg></button>
+        <button class="ghost gkey" id="compactBtn" title="Compact this chat into a new tab  (F6)"><svg class="ic"><use href="#i-compact"/></svg></button>
+        <button class="ghost gkey" id="editBtn" title="Paste the selection into ChatGPT WITHOUT sending — edit before send"><svg class="ic"><use href="#i-edit"/></svg></button>
+        <button class="ghost gkey" id="aaBtn" title="Send your &quot;aa&quot; keyword + the selection to ChatGPT  (F2)">aa</button>
+        <button class="ghost gkey" id="simpleBtn" title="Send your &quot;ss&quot; keyword + the selection to ChatGPT (simple 3-4 sentence answer)">ss</button>
+        <button class="ghost gkey" id="bbBtn" title="Send your keyword only to ChatGPT  (F3)">zz</button>
+        <button class="ghost teal" id="toEndBtn" title="Extend the selection to the end (till the end)"><svg class="ic"><use href="#i-toend"/></svg></button>
+        <button class="ghost send" id="gptBtn" title="Send the selection to ChatGPT  (F1)"><svg class="ic"><use href="#i-send"/></svg></button>
+      </div>
+      <div class="coding-btns">
+        <button class="ghost gkey" id="aaCodeBtn" title="Send your &quot;aa&quot; keyword + the selection to ChatGPT">aa</button>
+        <button class="ghost gkey" id="ssCodeBtn" title="Send your &quot;ss&quot; keyword + the selection (simple 3-4 sentence answer)">ss</button>
+        <button class="ghost gkey code-btn" data-cmd="1" title="Explain / plan the approach aloud  (F1)">plan</button>
+        <button class="ghost gkey code-btn" data-cmd="2" title="Write the code  (F2)">code</button>
+        <button class="ghost gkey code-btn" data-cmd="3" title="Suggest improvements  (F3)">improve</button>
+        <button class="ghost gkey code-btn" data-cmd="4" title="Edge cases  (F4)">edge</button>
+        <button class="ghost gkey code-btn" data-cmd="5" title="Time &amp; space complexity  (F5)">O(n)</button>
+      </div>
+    </div>
+    <div id="popBackdrop" class="pop-backdrop hidden"></div>
+    <div id="srcPop" class="opacity-pop src-pop hidden">
+      <button class="src-opt" data-src="speaker"><svg class="ic"><use href="#i-speaker"/></svg><span>Speaker<em>interviewer</em></span></button>
+      <button class="src-opt" data-src="mic"><svg class="ic"><use href="#i-mic"/></svg><span>You<em>your mic</em></span></button>
+      <button class="src-opt" data-src="both"><svg class="ic"><use href="#i-speaker"/></svg><span>Speaker + Mic<em>both, in one timeline</em></span></button>
+    </div>
+    <div id="opacityPop" class="opacity-pop hidden">
+      <div class="op-row">
+        <div class="op-title">Original Live Captions opacity</div>
+        <input id="opacitySlider" type="range" min="0" max="100" value="0" />
+        <div class="op-val"><span id="opacityVal">0%</span></div>
+      </div>
+      <div class="op-row">
+        <div class="op-title">This window opacity</div>
+        <input id="appOpacitySlider" type="range" min="20" max="100" value="100" />
+        <div class="op-val"><span id="appOpacityVal">100%</span></div>
+      </div>
+      <div class="op-row op-toggle">
+        <span class="op-title" style="margin:0">Keep window on top</span>
+        <label class="switch"><input id="topToggle" type="checkbox" /><span class="slider-sw"></span></label>
+      </div>
+    </div>
+    <div id="settingsPop" class="opacity-pop settings-pop hidden">
+      <div class="op-row op-toggle" style="border-top:none; margin-top:0; padding-top:0">
+        <span class="op-title" style="margin:0">Stealth mode</span>
+        <label class="switch"><input id="stealthToggle" type="checkbox" /><span class="slider-sw"></span></label>
+      </div>
+      <div class="op-row" style="margin-top:12px; padding-bottom:13px; border-bottom:1px solid var(--border)">
+        <div class="op-title" style="margin:0 0 6px">Transcription engines</div>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+          <span style="flex:0 0 52px; font-size:11px; opacity:.65; display:flex; align-items:center; gap:4px;"><svg class="ic" style="width:14px;height:14px"><use href="#i-speaker"/></svg>Speaker</span>
+          <select id="speakerEngineSelect" class="set-select" style="flex:1; min-width:0;">
+            <option value="system">System (Windows Live Captions)</option>
+            <option value="local">Local (Vosk — free, offline)</option>
+            <option value="deepgram">Deepgram (nova-3)</option>
+            <option value="elevenlabs">ElevenLabs Scribe v2</option>
+            <option value="speechmatics">Speechmatics</option>
+          </select>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="flex:0 0 52px; font-size:11px; opacity:.65; display:flex; align-items:center; gap:4px;"><svg class="ic" style="width:14px;height:14px"><use href="#i-mic"/></svg>Mic</span>
+          <select id="micEngineSelect" class="set-select" style="flex:1; min-width:0;">
+            <option value="browser">Browser (Chrome — works with NewCoo)</option>
+            <option value="local">Local (Vosk — free, offline)</option>
+            <option value="deepgram">Deepgram (nova-3)</option>
+            <option value="elevenlabs">ElevenLabs Scribe v2</option>
+            <option value="speechmatics">Speechmatics</option>
+          </select>
+        </div>
+        <div id="engineNote" class="help-note" style="margin-top:5px; opacity:.6; min-height:12px; font-size:10.5px; line-height:1.35"></div>
+        <div id="keyForm" style="display:none; margin-top:7px;">
+          <div style="display:flex; gap:6px; align-items:center;">
+            <input id="keyInput" type="password" placeholder="paste API key" spellcheck="false" autocomplete="off"
+              style="flex:1; min-width:0; font-size:11.5px; padding:6px 8px; border:1px solid var(--border); border-radius:7px; background:#fff; color:var(--text); -webkit-app-region:no-drag;" />
+            <button id="keySaveBtn" class="hk">Save</button>
+          </div>
+        </div>
+        <button id="engineInstallBtn" class="hk" style="margin-top:7px; display:none; width:100%">Set up local model (one-time)</button>
+        <div id="engineInstall" class="help-note" style="opacity:.5; font-size:10px; margin-top:4px; max-height:70px; overflow:auto; white-space:pre-wrap; font-family:ui-monospace,Consolas,monospace"></div>
+      </div>
+      <div class="op-title" style="margin:14px 0 5px">ChatGPT actions &amp; hotkeys</div>
+      <div class="set-row">
+        <div class="set-lbl" style="display:flex;align-items:center;gap:7px"><svg class="ic" style="width:17px;height:17px;color:var(--teal)"><use href="#i-send"/></svg>Send</div>
+        <button class="hk" id="hkSend" data-act="send" style="margin-left:auto">—</button>
+      </div>
+      <div class="set-row">
+        <input class="set-kw" id="kwAa" value="aa" maxlength="24" spellcheck="false" />
+        <button class="hk" id="hkAa" data-act="aa" style="margin-left:auto">—</button>
+      </div>
+      <div class="set-row">
+        <input class="set-kw" id="kwBb" value="zz" maxlength="24" spellcheck="false" />
+        <button class="hk" id="hkBb" data-act="bb" style="margin-left:auto">—</button>
+      </div>
+      <div class="set-row">
+        <div class="set-lbl">Compact</div>
+        <button class="hk" id="hkCompact" data-act="compact">—</button>
+      </div>
+      <input class="set-url" id="kwCompactUrl" placeholder="new-window URL, e.g. https://chatgpt.com/g/…  (blank = new chat)" spellcheck="false" />
+      <div class="set-row" style="margin-top:11px">
+        <div class="set-lbl">Mute microphone</div>
+        <button class="hk" id="hkMic" data-act="micmute">—</button>
+      </div>
+      <div class="op-row" style="margin-top:13px; padding-top:13px; border-top:1px solid var(--border)">
+        <div class="op-title" style="margin:0 0 6px">GPT auto scroll position</div>
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; opacity:.85;">Scroll up at
+            <input id="scrollTrigInput" type="number" min="25" max="95" step="1" value="57" style="width:52px; font-size:11.5px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; background:#fff; color:var(--text); -webkit-app-region:no-drag;" />%</label>
+          <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; opacity:.85;">scroll to
+            <input id="scrollTargetInput" type="number" min="10" max="90" step="1" value="35" style="width:52px; font-size:11.5px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; background:#fff; color:var(--text); -webkit-app-region:no-drag;" />%</label>
+          <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; opacity:.85;">speed
+            <input id="scrollSpeedInput" type="number" min="0.3" max="4" step="0.1" value="1.5" style="width:52px; font-size:11.5px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; background:#fff; color:var(--text); -webkit-app-region:no-drag;" />&#215;</label>
+        </div>
+        <div class="help-note" style="opacity:.55; font-size:10px; margin-top:5px">when the line you're reading reaches this far down the page, scroll it up to here (% from top)</div>
+      </div>
+      <div class="op-row op-toggle" style="margin-top:13px; padding-top:13px; border-top:1px solid var(--border)">
+        <span class="op-title" style="margin:0">Auto scroll debug <span class="help-note" style="opacity:.6; display:block; font-weight:400; margin-top:2px">on ChatGPT tab</span></span>
+        <label class="switch"><input id="consoleToggle" type="checkbox" /><span class="slider-sw"></span></label>
+      </div>
+      <div class="op-row op-toggle" style="margin-top:13px; padding-top:13px; border-top:1px solid var(--border)">
+        <span class="op-title" style="margin:0">Debug console <span class="help-note" style="opacity:.6; display:block; font-weight:400; margin-top:2px">app logs &amp; errors  ·  also Ctrl+Shift+D</span></span>
+        <label class="switch"><input id="dbgToggle" type="checkbox" /><span class="slider-sw"></span></label>
+      </div>
+    </div>
+  </section>
+
+  <!-- in-app debug console: app (main + renderer) logs & errors, for machines without DevTools -->
+  <div id="dbgPanel" class="dbg-panel" style="display:none;">
+    <div class="dbg-head">
+      <b>Debug console</b>
+      <span id="dbgCount" class="dbg-count"></span>
+      <span id="dbgCopy" class="dbg-btn" style="margin-left:auto">copy</span>
+      <span id="dbgClear" class="dbg-btn">clear</span>
+      <span id="dbgClose" class="dbg-btn">&times;</span>
+    </div>
+    <div id="dbgLog" class="dbg-log"></div>
+  </div>
+
+  <!-- ===================== OVERLAY MODALS ===================== -->
+  <div id="overlay" class="overlay hidden">
+    <div id="mPerm" class="modal">
+      <div class="m-ic warn"><svg class="ic"><use href="#i-warn"/></svg></div>
+      <div class="m-title">Please confirm permission to record</div>
+      <div class="m-body">Please ensure you have obtained permission from the content owner and/or participants to be recorded.</div>
+      <div class="m-row2">
+        <button class="btn-light" id="permCancel">Cancel</button>
+        <button class="primary" id="permOk">Accept &amp; Start Recording</button>
+      </div>
+    </div>
+    <div id="mDone" class="modal hidden">
+      <button class="m-x" id="doneX"><svg class="ic"><use href="#i-close"/></svg></button>
+      <div class="m-ic teal"><svg class="ic"><use href="#i-check-c"/></svg></div>
+      <div class="m-title">Session Complete</div>
+      <div class="m-label">Name for your session</div>
+      <input id="sessName" class="m-input" type="text" />
+      <button class="primary block" id="doneSave">End and Save session</button>
+      <button class="btn-danger" id="doneDelete">Delete session</button>
+    </div>
+    <div id="mExit" class="modal hidden">
+      <div class="m-ic teal"><svg class="ic"><use href="#i-check-c"/></svg></div>
+      <div class="m-title">Save this session before exiting?</div>
+      <div class="m-body">Save this live transcript to your library, or exit without saving.</div>
+      <input id="exitName" class="m-input" placeholder="Session name" />
+      <button class="primary block" id="exitSave">Save &amp; exit</button>
+      <div class="m-row2">
+        <button class="btn-light" id="exitCancel">Cancel</button>
+        <button class="btn-danger" id="exitNoSave">Exit without saving</button>
+      </div>
+    </div>
+    <div id="mSavedDelete" class="modal delete-modal hidden">
+      <button class="m-x" id="savedDeleteX" title="Cancel"><svg class="ic"><use href="#i-close"/></svg></button>
+      <div class="m-ic danger"><svg class="ic"><use href="#i-trash"/></svg></div>
+      <div class="m-title">Delete saved session?</div>
+      <div class="delete-target" id="savedDeleteName"></div>
+      <div class="m-body">This permanently removes the transcript and its recording from this PC. This action cannot be undone.</div>
+      <div class="m-row2">
+        <button class="btn-light delete-cancel" id="savedDeleteCancel">Cancel</button>
+        <button class="btn-danger delete-confirm" id="savedDeleteOk"><svg class="ic"><use href="#i-trash"/></svg> Delete session</button>
+      </div>
+    </div>
+    <div id="mHelp" class="modal help-modal hidden">
+      <button class="m-x" id="helpX"><svg class="ic"><use href="#i-close"/></svg></button>
+      <div class="m-title" style="margin-bottom:4px">Caption assistance</div>
+      <div class="help-sub">Interview support over Windows Live Captions<br>Haru Mikage · Japan · 2026.8.15</div>
+      <div class="help-body">
+        <div class="help-sec">
+          <div class="help-h">Transcript</div>
+          <ul>
+            <li>Drag to select · double-click = a sentence · triple-click = the line</li>
+            <li>“Till the end” keeps following new text (auto-scroll stays on)</li>
+            <li>Minimap on the right — drag to navigate; red marks show where you sent from</li>
+          </ul>
+        </div>
+        <div class="help-sec">
+          <div class="help-h">Send to ChatGPT <span class="help-note">needs the Chrome extension + a bound tab</span></div>
+          <ul>
+            <li><b>↑ Send (F1)</b> the selection · <b>aa (F2)</b> keyword + selection · <b>zz (F3)</b> keyword only</li>
+            <li><b>✎ Edit-before-send</b> pastes without submitting · <b>Compact (F6)</b> moves the chat to a fresh tab</li>
+            <li>In ChatGPT: the <b>chain</b> icon binds the tab, the <b>copy</b> icon copies the last answer</li>
+          </ul>
+        </div>
+        <div class="help-sec">
+          <div class="help-h">GPT auto scroll <span class="help-note">read-along</span></div>
+          <ul>
+            <li>Read the answer aloud — the current line is marked and the page follows you</li>
+            <li>Toggle in Settings (gear) → GPT auto scroll</li>
+          </ul>
+        </div>
+        <div class="help-sec">
+          <div class="help-h">Other</div>
+          <ul>
+            <li><b>Mic</b> button mutes your mic system-wide (also a hotkey); its fill shows the live input level</li>
+            <li><b>Eye:</b> Live Captions opacity, window opacity, keep-on-top</li>
+            <li><b>Gear:</b> hotkeys, keywords, compact URL, stealth · <b>Save</b> (bookmark) exports the transcript</li>
+          </ul>
+        </div>
+      </div>
+      <button class="primary block" id="helpOk">Got it</button>
+    </div>
+  </div>
+
+</div>
+<script src="transcribe.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>
