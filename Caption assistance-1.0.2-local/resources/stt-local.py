@@ -63,7 +63,13 @@ def main():
                         dev = lb; break
             in_rate = int(dev['defaultSampleRate']); ch = int(dev['maxInputChannels']); dev_idx = dev['index']
         else:
-            import pyaudio
+            # The one-click installer provides PyAudioWPatch. Some machines also have the
+            # original PyAudio package, but it is not required: PyAudioWPatch exposes the
+            # same capture API and is already needed for WASAPI loopback.
+            try:
+                import pyaudio
+            except ImportError:
+                import pyaudiowpatch as pyaudio
             pa = pyaudio.PyAudio()
             dev_idx = None
             if args.device:

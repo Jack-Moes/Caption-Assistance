@@ -27,7 +27,7 @@ Network and Privacy
 
 - The app does not send the PC name, Windows username, local IP address, or distribution ID to an external deployment-verification server.
 - The app and Chrome extension communicate only through the local address 127.0.0.1:17632 on this PC.
-- The permitted local network range is 192.168.5.*.
+- The app runs on any network. There is no subnet restriction.
 
 Folder Descriptions
 -------------------

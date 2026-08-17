@@ -43,18 +43,8 @@ let micReaderPaused = false;  // WinRT mic-reader runs only when micEngine === '
 let readerPaused = false;     // Live Captions reader paused when a non-system engine is active
 let localStt = { mic: null, speaker: null };   // local GPU (RealtimeSTT) subprocesses, one per source
 
-// Local deployment: only run on the requested LAN subnet (192.168.5.*).
-function networkAllowed() {
-  try {
-    const ifaces = os.networkInterfaces();
-    for (const name in ifaces) {
-      for (const a of (ifaces[name] || [])) {
-        if (a && a.family === 'IPv4' && /^192\.168\.5\./.test(a.address)) return true;
-      }
-    }
-  } catch (e) {}
-  return false;
-}
+// The LAN subnet gate (192.168.5.*) was removed: it exited before createWindow, so on any other
+// network the app just died silently with no window and no error. This is a local-only build.
 
 // Distribution telemetry is intentionally disabled in this local build.
 // No build ID, hostname, Windows username, or local IP addresses are sent at startup.
@@ -206,11 +196,12 @@ function createSplash() {
   } catch (e) { splash = null; }
 }
 function closeSplash() { if (splash && !splash.isDestroyed()) { try { splash.close(); } catch (e) {} } splash = null; }
-// Keep the branded start video visible for five seconds before revealing the app.
+// Show the branded splash only until the main window is actually ready. The old fixed 5 s hold added
+// five seconds of dead time to every launch; 700 ms is enough to avoid a bare flash on a fast machine.
 function revealMain() {
   if (revealScheduled) return;
   revealScheduled = true;
-  const wait = Math.max(0, 5000 - (Date.now() - (splashAt || Date.now())));  // play the 5s start video
+  const wait = Math.max(0, 700 - (Date.now() - (splashAt || Date.now())));
   setTimeout(() => {
     try { if (win && !win.isDestroyed() && !win.isVisible()) showPrivacyAwareWindow(false); } catch (e) {}
     closeSplash();
@@ -239,8 +230,8 @@ function createWindow() {
       autoplayPolicy: 'no-user-gesture-required'   // let session-replay audio load/seek/play without a gesture (fixes MediaRecorder webm duration probe)
     }
   });
-  win.once('ready-to-show', revealMain);   // reveals after the five-second minimum above
-  setTimeout(revealMain, 12000);           // fallback: never leave the window hidden if ready-to-show is missed
+  win.once('ready-to-show', revealMain);   // reveals after the short minimum above
+  setTimeout(revealMain, 6000);            // fallback: never leave the window hidden if ready-to-show is missed
   win.loadFile(path.join(__dirname, 'index.html'));
   win.on('closed', () => { if (taskbarPolicyTimer) { clearTimeout(taskbarPolicyTimer); taskbarPolicyTimer = null; } win = null; });
   // Re-assert topmost whenever we regain focus, so we surface above another
@@ -304,11 +295,6 @@ if (!app.requestSingleInstanceLock()) {
     if (win) showPrivacyAwareWindow(true);
   });
   app.whenReady().then(async () => {
-    const pass = networkAllowed();
-    if (!pass) {
-      console.error('[CA-main] unauthorized network -> exiting (requires 192.168.5.*)');
-      try { app.quit(); } catch (e) {} process.exit(1); return;   // exit BEFORE createWindow -> the splash never shows on an unauthorized machine
-    }
     loadPrivacyConfig();
     createWindow();
     // allow the renderer's getUserMedia (mic) + getDisplayMedia (system-audio loopback) without a prompt
@@ -422,7 +408,9 @@ function doSendChatGPT(text, actionId, submit, focus) {
     return;
   }
   if (shouldFocus) allowForeground();
-  enqueueCommand({ type: 'send', text: text, submit: submit !== false, focus: shouldFocus, returnToApp: wantsAnswer, requestId: requestId, actionId: actionId || 'send', ts: Date.now(), expiresAt: Date.now() + 5000 });
+  // 5 s was too tight: a sleeping MV3 service worker can take longer than that to reconnect its /wait,
+  // and the command then expired instead of being delivered. Delivery itself is still instant.
+  enqueueCommand({ type: 'send', text: text, submit: submit !== false, focus: shouldFocus, returnToApp: wantsAnswer, requestId: requestId, actionId: actionId || 'send', ts: Date.now(), expiresAt: Date.now() + 15000 });
 }
 // grant foreground rights (while THIS app is foreground on the click) so the bound
 // browser tab can raise above this window when the extension focuses it
@@ -469,10 +457,11 @@ let actions = {
   aa:      { key: '', label: 'aa' },
   bb:      { key: '', text: 'zz' },
   simple:  { key: '', label: 'ss' },   // sends the "ss" keyword + context; the primed session's [ss] mode = a simple 3-4 sentence answer
+  latest:  { key: '' },                // select the latest transcript sentence in the app; never sends it
   compact: { key: '', url: '' },  // open a fresh ChatGPT window at this URL + move the history there
   micmute: { key: '' }              // toggle system mic mute (handled in the renderer so it uses the chosen device)
 };
-async function sendAction(id) {
+async function sendAction(id, suppliedSelection) {
   console.log('[CA-main] sendAction:', id);
   dbg('sendAction ' + id);
   if (id === 'compact') {
@@ -485,10 +474,18 @@ async function sendAction(id) {
     return;
   }
   let text = '', submit = true;
-  if (id === 'send') { text = await getSelectionText(); }
-  else if (id === 'paste') { text = await getSelectionText(); submit = false; }   // edit-before-send: paste only, no submit
-  else if (id === 'aa') { const sel = await getSelectionText(); const label = (actions.aa.label || 'aa'); text = sel ? (label + '\n' + sel) : label; }
-  else if (id === 'simple') { const sel = await getSelectionText(); const label = (actions.simple.label || 'ss'); text = sel ? (label + '\n' + sel) : label; }
+  const selectionRequired = id === 'send' || id === 'paste' || id === 'aa' || id === 'simple';
+  const sel = selectionRequired
+    ? (typeof suppliedSelection === 'string' ? suppliedSelection.trim() : (await getSelectionText()).trim())
+    : '';
+  if (selectionRequired && !sel) {
+    emitGptResult({ ok: false, error: 'Select a question first, or press Latest.', code: 'selection-required', returnToApp: false, actionId: id });
+    return;
+  }
+  if (id === 'send') { text = sel; }
+  else if (id === 'paste') { text = sel; submit = false; }   // edit-before-send: paste only, no submit
+  else if (id === 'aa') { const label = (actions.aa.label || 'aa'); text = label + '\n' + sel; }
+  else if (id === 'simple') { const label = (actions.simple.label || 'ss'); text = label + '\n' + sel; }
   else if (id === 'bb') { text = (actions.bb.text || 'bb'); }
   console.log('[CA-main] action', id, '-> text length', text.length, 'submit', submit);
   dbg('  ' + id + ' built textlen=' + text.length);
@@ -496,7 +493,7 @@ async function sendAction(id) {
   // bb/zz sends a fixed keyword (not the selection) -> leave the selection untouched
   if (id !== 'bb' && win && !win.isDestroyed()) win.webContents.send('advance-selection', id);
 }
-ipcMain.on('send-action', (e, id) => sendAction(id));
+ipcMain.on('send-action', (e, id, selectedText) => sendAction(id, selectedText));
 
 // default prompts page: read the bundled prompts/*.txt (resources/prompts when packaged, ./prompts in dev)
 function promptsDir() { return path.join(app.isPackaged ? process.resourcesPath : __dirname, 'prompts'); }
@@ -559,6 +556,9 @@ function registerHotkeys() {
     results.bb = reg(actions.bb.key, () => sendAction('bb'));
     results.compact = reg(actions.compact.key, () => sendAction('compact'));
   }
+  // Available in every interview mode. In Live Coding, F1-F5 remain reserved and a
+  // conflicting Latest binding is visibly marked as unavailable in Settings.
+  results.latest = reg(actions.latest.key, () => { if (win && !win.isDestroyed()) win.webContents.send('hotkey-latest'); });
   results.micmute = reg(actions.micmute.key, () => { if (win && !win.isDestroyed()) win.webContents.send('hotkey-mute'); });
   console.log('[CA-main] registered hotkeys (coding=' + codingMode + ') -> ok:', JSON.stringify(results));
   sendPrivacyState();
@@ -571,6 +571,7 @@ ipcMain.handle('set-hotkeys', (e, cfg) => {
   if (cfg.send && typeof cfg.send.key === 'string') actions.send.key = cfg.send.key;
   if (cfg.aa)      { if (typeof cfg.aa.key === 'string') actions.aa.key = cfg.aa.key; if (typeof cfg.aa.label === 'string') actions.aa.label = cfg.aa.label; }
   if (cfg.bb)      { if (typeof cfg.bb.key === 'string') actions.bb.key = cfg.bb.key; if (typeof cfg.bb.text === 'string') actions.bb.text = cfg.bb.text; }
+  if (cfg.latest && typeof cfg.latest.key === 'string') actions.latest.key = cfg.latest.key;
   if (cfg.compact) { if (typeof cfg.compact.key === 'string') actions.compact.key = cfg.compact.key; if (typeof cfg.compact.url === 'string') actions.compact.url = cfg.compact.url; }
   if (cfg.micmute && typeof cfg.micmute.key === 'string') actions.micmute.key = cfg.micmute.key;
   const results = registerHotkeys();

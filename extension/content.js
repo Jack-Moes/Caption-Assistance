@@ -65,7 +65,7 @@ function findSendButton() {
 }
 async function waitFor(fn, ms) {
   const start = Date.now();
-  while (Date.now() - start < ms) { const v = fn(); if (v) return v; await sleep(25); }
+  while (Date.now() - start < ms) { const v = fn(); if (v) return v; await sleep(8); }
   return null;
 }
 
@@ -143,7 +143,7 @@ function startAssistantAnswerWatch(requestId, baseline, userNode, recovered) {
     const changed = !!(isNew && text && text !== lastText);
     if (changed) {
       lastText = text; lastChangeAt = now;
-      if (now - lastPostAt >= 120) {
+      if (now - lastPostAt >= 40) {
         lastPostAt = now; lastSent = text;
         reportAnswer({ requestId, phase: 'stream', text, error: '', seq: nextSeq() });
       }
@@ -153,18 +153,20 @@ function startAssistantAnswerWatch(requestId, baseline, userNode, recovered) {
       settleTimer = setTimeout(() => {
         settleTimer = null;
         const current = answerTextOf(userNode ? assistantAfterUser(userNode) : (assistantNodes().slice(-1)[0] || null));
-        if (!generationActive() && current && current === lastText && Date.now() - lastChangeAt >= 1800) {
+        // The stop button is gone AND the text stopped growing -> generation really finished.
+        // 600ms is enough to ride out a mid-stream render pause without holding the UI busy for ~2s.
+        if (!generationActive() && current && current === lastText && Date.now() - lastChangeAt >= 550) {
           if (current !== lastSent) reportAnswer({ requestId, phase: 'stream', text: current, error: '', seq: nextSeq() });
           finish('final', current, '');
-        } else scheduleInspect(80);
-      }, 1900);
+        } else scheduleInspect(40);
+      }, 600);
     }
   };
   const scheduleInspect = (delay) => {
     if (closed || inspectTimer) return;
-    inspectTimer = setTimeout(inspect, delay == null ? 60 : delay);
+    inspectTimer = setTimeout(inspect, delay == null ? 16 : delay);
   };
-  const observer = new MutationObserver(() => scheduleInspect(60));
+  const observer = new MutationObserver(() => scheduleInspect(16));
   const noAnswerTimer = setTimeout(() => {
     if (!lastText && !generationActive()) finish('error', '', 'No ChatGPT response was detected. Use Refresh to safely reconnect this request.');
   }, 45000);
@@ -224,23 +226,25 @@ async function insertAndSend(text, submit, meta) {
     } catch (e) {}
     return true;
   }
-  // React normally enables Send on the next render; a short yield is enough and avoids a fixed 250 ms delay.
-  await sleep(35);
+  // React enables Send on the next render; yield one frame instead of a fixed delay.
+  await new Promise((r) => requestAnimationFrame(() => r()));
   const btn = await waitFor(() => { const b = findSendButton(); return (b && !b.disabled) ? b : null; }, 5000);
+  const confirmSubmit = () => waitFor(() => document.querySelectorAll('[data-message-author-role="user"]').length > userCountBefore || generationActive(), 3500);
+  // Attach the observer BEFORE awaiting confirmation: confirmation costs 50-200 ms and ChatGPT can
+  // already be emitting its first tokens inside that window. Cancelled again if the submit never lands.
+  const abortWatch = () => { if (baseline) { caAnswerWatchToken++; if (caAnswerWatchCleanup) caAnswerWatchCleanup(); } };
   if (btn) {
     log('clicking send button'); btn.click();
-    const confirmed = await waitFor(() => document.querySelectorAll('[data-message-author-role="user"]').length > userCountBefore || generationActive(), 3500);
-    if (!confirmed) throw new Error('ChatGPT did not confirm that the question was submitted. Use Refresh; do not press Send repeatedly.');
     if (baseline) startAssistantAnswerWatch(meta.requestId, baseline, null, false);
+    if (!(await confirmSubmit())) { abortWatch(); throw new Error('ChatGPT did not confirm that the question was submitted. Use Refresh; do not press Send repeatedly.'); }
     return true;
   }
   warn('send button not found/enabled — falling back to Enter key');
   const opts = { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter', keyCode: 13, which: 13 };
   el.dispatchEvent(new KeyboardEvent('keydown', opts));
   el.dispatchEvent(new KeyboardEvent('keyup', opts));
-  const confirmed = await waitFor(() => document.querySelectorAll('[data-message-author-role="user"]').length > userCountBefore || generationActive(), 3500);
-  if (!confirmed) throw new Error('ChatGPT did not confirm that the question was submitted. Use Refresh; do not press Send repeatedly.');
   if (baseline) startAssistantAnswerWatch(meta.requestId, baseline, null, false);
+  if (!(await confirmSubmit())) { abortWatch(); throw new Error('ChatGPT did not confirm that the question was submitted. Use Refresh; do not press Send repeatedly.'); }
   return true;
 }
 
@@ -353,10 +357,17 @@ function ensureBindButton() {
 }
 // Position: multi-line composer -> next to the "+" (bottom row is clear); one-line -> above the box
 // top-right (next-to-"+" would sit on the "Ask ChatGPT" placeholder).
+// The three icons share one measurement per tick. Reading getBoundingClientRect per icon forced six
+// synchronous layouts every 600 ms on the ChatGPT page — visible jank while an answer is streaming.
+var caXY = null;
 function caIconXY(plus, idx) {   // idx: 0=bind, 1=copy, 2=auto-scroll
-  const box = plus.closest('form') || plus;
-  const br = box.getBoundingClientRect(), pr = plus.getBoundingClientRect();
-  if (!pr.width) return null;
+  if (!caXY) {
+    const box = plus.closest('form') || plus;
+    const br = box.getBoundingClientRect(), pr = plus.getBoundingClientRect();
+    caXY = pr.width ? { br: br, pr: pr } : { bad: true };
+  }
+  if (caXY.bad) return null;
+  const br = caXY.br, pr = caXY.pr;
   if (br.height >= 78) return { left: pr.right + 4 + idx * 34, top: pr.top + (pr.height - 34) / 2 };   // next to the "+", stacked rightward
   return { left: br.right - 42 - idx * 38, top: br.top - 40 };                                          // above the box, stacked leftward
 }
@@ -430,7 +441,7 @@ function ensureScrollButton() {
 }
 // Position: multi-line composer -> next to the "+" (bottom row is clear); one-line -> above the box
 ensureBindButton(); ensureCopyButton(); ensureScrollButton();
-setInterval(() => { ensureBindButton(); ensureCopyButton(); ensureScrollButton(); if ((caTick++ % 8) === 0) refreshBindState(); }, 600);   // reposition ~0.6s, refresh state ~5s
+setInterval(() => { caXY = null; ensureBindButton(); ensureCopyButton(); ensureScrollButton(); if ((caTick++ % 8) === 0) refreshBindState(); }, 600);   // reposition ~0.6s (one shared measurement), refresh state ~5s
 // Command delivery uses the service worker's pending /wait request. This adaptive heartbeat is now
 // state-only: fast enough for read-along while it is active, quiet while idle.
 (function bridgeHeartbeat() {

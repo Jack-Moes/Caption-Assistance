@@ -477,6 +477,24 @@ function selectRange(node, s, e) {
   r.setEnd(node, Math.max(0, Math.min(e, len)));
   const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
 }
+function selectLatestSentence() {
+  const divs = captionEl.querySelectorAll('.para');
+  for (let i = divs.length - 1; i >= 0; i--) {
+    const node = ptextOf(divs[i]);
+    if (!node || !node.textContent || !node.textContent.trim()) continue;
+    const sentences = getSentences(node.textContent);
+    const latest = sentences.length ? sentences[sentences.length - 1] : null;
+    if (!latest) continue;
+    selectRange(node, latest.start, latest.end);
+    followStopped = true;   // select one current sentence; do not silently grow into later captions
+    resumeAnchor = null;
+    const tb = $('toEndBtn'); if (tb) tb.classList.remove('snipping');
+    try { divs[i].scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+    scheduleMinimap();
+    return selectionCaptionText();
+  }
+  return '';
+}
 // Captions keep flowing during selection. We freeze DOM updates only during the
 // active drag (so the drag isn't interrupted); once selected, a selection that
 // reaches the end grows with new text, a middle selection stays put.
@@ -686,6 +704,7 @@ let hotCfg = {
   send:    { key: '' },              // hotkeys start UNBOUND -- the user assigns them (click the box, press a key)
   aa:      { key: '', label: 'aa' },
   bb:      { key: '', text: 'zz' },
+  latest:  { key: '' },
   compact: { key: '', url: '' },
   micmute: { key: '' }
 };
@@ -758,6 +777,7 @@ function applyHotUI() {
   $('hkSend').textContent = hotCfg.send.key || '—';
   $('hkAa').textContent = hotCfg.aa.key || '—';
   $('hkBb').textContent = hotCfg.bb.key || '—';
+  if ($('hkLatest')) $('hkLatest').textContent = (hotCfg.latest && hotCfg.latest.key) || '—';
   $('hkCompact').textContent = hotCfg.compact.key || '—';
   if ($('hkMic')) $('hkMic').textContent = (hotCfg.micmute && hotCfg.micmute.key) || '—';
   if ($('hkPrivacyClick')) $('hkPrivacyClick').textContent = displayAccel(privacyCfg.clickHotkey);
@@ -773,6 +793,7 @@ function applyHotUI() {
   setTitle('gptBtn', 'Send the selection to ChatGPT' + hk(hotCfg.send.key));
   if (aBtn) aBtn.title = 'Send your "' + (hotCfg.aa.label || 'aa') + '" keyword + the selection to ChatGPT' + hk(hotCfg.aa.key);
   if (bBtn) bBtn.title = 'Send "' + (hotCfg.bb.text || 'zz') + '" only to ChatGPT' + hk(hotCfg.bb.key);
+  setTitle('latestBtn', 'Select the latest sentence without sending it' + hk(hotCfg.latest && hotCfg.latest.key));
   setTitle('compactBtn', 'Compact this chat into a new tab' + hk(hotCfg.compact.key));
   setTitle('micBtn', 'Mute the microphone system-wide (stops it reaching every app, incl. meetings)' + hk(hotCfg.micmute && hotCfg.micmute.key));
 }
@@ -783,7 +804,7 @@ function syncHot() {
   hotCfg.compact.url = ($('kwCompactUrl').value || '').trim();
   try { localStorage.setItem('ce_hotcfg', JSON.stringify(hotCfg)); } catch (e) {}
   window.cap.setHotkeys(hotCfg).then((r) => {
-    if (r && r.results) { markHk('hkSend', r.results.send); markHk('hkAa', r.results.aa); markHk('hkBb', r.results.bb); markHk('hkCompact', r.results.compact); markHk('hkMic', r.results.micmute); }
+    if (r && r.results) { markHk('hkSend', r.results.send); markHk('hkAa', r.results.aa); markHk('hkBb', r.results.bb); markHk('hkLatest', r.results.latest); markHk('hkCompact', r.results.compact); markHk('hkMic', r.results.micmute); }
   }).catch(() => {});
 }
 // rebind a hotkey: click its box, then press the new key
@@ -1029,6 +1050,18 @@ $('copyBtn').addEventListener('click', () => {
   const u = $('copyBtn').querySelector('use'); if (u) { u.setAttribute('href', '#i-check'); setTimeout(() => u.setAttribute('href', '#i-copy'), 550); }
 });
 function flashBtn(id) { const b = $(id); if (!b) return; b.classList.add('flash'); setTimeout(() => b.classList.remove('flash'), 220); }
+let actionNoticeTimer = null;
+function showActionNotice(message, type, timeoutMs) {
+  const n = $('actionNotice'); if (!n) return;
+  clearTimeout(actionNoticeTimer);
+  n.textContent = message;
+  n.className = 'action-notice ' + (type || 'warn');
+  actionNoticeTimer = setTimeout(() => { n.className = 'action-notice hidden'; }, timeoutMs || 2300);
+}
+function confirmSelectionBriefly() {
+  captionEl.classList.add('selection-confirming');
+  setTimeout(() => captionEl.classList.remove('selection-confirming'), 650);
+}
 function setBusy(on, id, timeoutMs) {
   busy = on;
   if (busyBtn) { const p = $(busyBtn); if (p) p.classList.remove('busy'); }   // clear previous spinner
@@ -1037,7 +1070,28 @@ function setBusy(on, id, timeoutMs) {
   if (busyTimer) { clearTimeout(busyTimer); busyTimer = null; }
   if (on) busyTimer = setTimeout(() => setBusy(false), timeoutMs || 9000);   // long timeout while streaming an in-app response
 }
-function trigger(action, btnId) { if (busy) return; setBusy(true, btnId); window.cap.sendAction(action); }
+function trigger(action, btnId) {
+  if (busy) { showActionNotice('A ChatGPT request is already in progress. Please wait.', 'warn'); return; }
+  const needsSelection = action === 'send' || action === 'paste' || action === 'aa' || action === 'simple';
+  const selectedText = needsSelection ? selectionCaptionText() : '';
+  if (needsSelection && !selectedText) {
+    flashBtn('latestBtn');
+    showActionNotice('Select a question first, or press Latest.', 'warn');
+    return;
+  }
+  if (needsSelection) {
+    confirmSelectionBriefly();
+    const preview = selectedText.replace(/\s+/g, ' ').trim();
+    showActionNotice('Sending: “' + (preview.length > 74 ? preview.slice(0, 71) + '…' : preview) + '”', 'ok', 1700);
+  }
+  setBusy(true, btnId);
+  window.cap.sendAction(action, selectedText);
+}
+// Keep the transcript range alive until the click handler snapshots it. Moving focus to a
+// toolbar button can otherwise collapse the DOM selection before aa/ss/Send reads it.
+['gptBtn', 'aaBtn', 'aaCodeBtn', 'simpleBtn', 'ssCodeBtn', 'editBtn'].forEach((id) => {
+  const b = $(id); if (b) b.addEventListener('mousedown', (e) => e.preventDefault());
+});
 $('gptBtn').addEventListener('click', () => trigger('send', 'gptBtn'));
 $('aaBtn').addEventListener('click', () => trigger('aa', 'aaBtn'));
 if ($('aaCodeBtn')) $('aaCodeBtn').addEventListener('click', () => trigger('aa', 'aaCodeBtn'));   // Live Coding row: same aa action
@@ -1046,6 +1100,14 @@ if ($('simpleBtn')) $('simpleBtn').addEventListener('click', () => trigger('simp
 $('bbBtn').addEventListener('click', () => trigger('bb', 'bbBtn'));
 $('compactBtn').addEventListener('click', () => trigger('compact', 'compactBtn'));
 $('editBtn').addEventListener('click', () => trigger('paste', 'editBtn'));
+function runLatestSelection() {
+  if (selectLatestSentence()) {
+    flashBtn('latestBtn');
+    showActionNotice('Latest sentence selected. Choose Send, aa, or ss.', 'ok');
+  } else showActionNotice('No recent transcript sentence is available yet.', 'warn');
+}
+if ($('latestBtn')) $('latestBtn').addEventListener('click', runLatestSelection);
+if (window.cap.onHotkeyLatest) window.cap.onHotkeyLatest(runLatestSelection);
 $('toEndBtn').addEventListener('click', () => {
   const b = $('toEndBtn');
   if (b.classList.contains('snipping')) { followStopped = true; b.classList.remove('snipping'); }   // click again -> STOP growing (freeze)
@@ -1116,6 +1178,12 @@ function selectToEnd() {
   scrollBottom();
 }
 if (window.cap.onGptResult) window.cap.onGptResult((r) => {
+  if (r && r.code === 'selection-required') {
+    setBusy(false);
+    flashBtn('latestBtn');
+    showActionNotice(r.error || 'Select a question first, or press Latest.', 'warn');
+    return;
+  }
   if (r && r.returnToApp) {
     if (!r.ok && (!r.requestId || r.requestId === answerRequestId)) failGptAnswer((r.detail && r.detail.error) || r.error || 'Could not send the request to ChatGPT.');
     return;   // successful insertion is only an acknowledgement; the answer stream ends the busy state

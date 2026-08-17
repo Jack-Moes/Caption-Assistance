@@ -66,13 +66,28 @@ function Find-Cap {
     return $el
 }
 function Emit($obj) { [Console]::Out.WriteLine(($obj | ConvertTo-Json -Compress)); [Console]::Out.Flush() }
+$script:opAlpha = -1
+$script:opStamp = [DateTime]::MinValue
+function Read-Alpha {
+    # Cached read. The old code ran Get-Content on this file EVERY 100 ms tick -- ten pipeline-backed
+    # disk reads per second for a value that changes only when the user moves the slider. Stat the file
+    # (a cheap .NET call) and re-read the contents only when its timestamp actually moved.
+    try {
+        $t = [IO.File]::GetLastWriteTimeUtc($opFile)
+        if ($t -ne $script:opStamp) {
+            $script:opStamp = $t
+            $raw = [IO.File]::ReadAllText($opFile)
+            $a = 0
+            if ($raw -and [int]::TryParse($raw.Trim(), [ref]$a)) { $script:opAlpha = $a }   # tolerate a mid-write empty/garbage read
+        }
+    } catch { }
+    return $script:opAlpha
+}
 function Enforce-Visibility {
     if ($script:lcHwnd -eq [IntPtr]::Zero) { $script:lcHwnd = Get-LcHwnd }
     if ($script:lcHwnd -eq [IntPtr]::Zero) { return }
-    if (-not (Test-Path $opFile)) { return }
     try {
-        $raw = (Get-Content $opFile -Raw); if (-not $raw) { return }
-        $a = 0; if (-not [int]::TryParse($raw.Trim(), [ref]$a)) { return }   # tolerate a mid-write empty/garbage read
+        $a = Read-Alpha; if ($a -lt 0) { return }   # no readable opacity file yet
         $rect = New-Object LcOp+RECT
         if (-not [LcOp]::GetWindowRect($script:lcHwnd, [ref]$rect)) {
             $script:lcHwnd = Get-LcHwnd   # handle went stale (LC restarted) -> refresh once
@@ -134,5 +149,5 @@ while ($true) {
         elseif ($txt -eq 'Setting up live captions') { if ($last -ne '@setup') { Emit @{ status = 'setup' }; $last = '@setup' } }
         elseif ($txt -ne $last) { Emit @{ status = 'live'; text = $txt }; $last = $txt }
     } catch { }
-    Start-Sleep -Milliseconds 100
+    Start-Sleep -Milliseconds 40   # UIA read + cached visibility check are cheap now; 40 ms cuts ~30 ms of average caption lag
 }

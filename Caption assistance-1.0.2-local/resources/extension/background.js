@@ -200,12 +200,12 @@ async function pumpAnswers() {
   while (answerQueue.length) {
     const item = answerQueue.shift();
     const response = await postToBridge(item.body);
-    if (!response || !response.ok) {
-      item.attempts++;
-      if (item.body.phase !== 'stream' && item.attempts < 10) answerQueue.unshift(item);
-      await sleep(Math.min(2000, 200 * item.attempts));
-      if (item.body.phase === 'stream') continue;
-    }
+    if (response && response.ok) continue;
+    item.attempts++;
+    // A stream chunk is disposable — the NEXT chunk carries the full text anyway. Retrying/sleeping on
+    // one used to stall every later chunk behind a backoff of up to 2 s, which stuttered the whole answer.
+    if (item.body.phase === 'stream') continue;
+    if (item.attempts < 10) { answerQueue.unshift(item); await sleep(Math.min(400, 80 * item.attempts)); }
   }
   answerPosting = false;
 }

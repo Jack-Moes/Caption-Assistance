@@ -73,7 +73,7 @@ If these buttons are missing after an extension update, reload the extension and
 | **bind a tab** | The extension is connected, but no exact ChatGPT tab is selected | Click the chain button in the ChatGPT tab |
 | **no bridge** | The app and extension are not connected | Start the app, reload the extension, then refresh ChatGPT |
 
-The app and extension communicate locally at `127.0.0.1:17632`. A `192.168.5.*` address is not needed for normal use, and no external deployment server is needed.
+The app and extension communicate locally at `127.0.0.1:17632`. The app runs on any network, and no external deployment server is needed.
 
 ## 4. Recommended first-time workflow
 
@@ -209,6 +209,7 @@ This is useful when one interview question arrives in several caption fragments.
 |---|---|
 | Microphone | Mutes/unmutes the selected microphone system-wide; its fill also shows the input level |
 | Copy | Copies only the selected transcript text |
+| **Latest** | Selects the most recent transcript sentence without sending it; then choose Send, aa, or ss |
 | Compact | Copies the current ChatGPT conversation into a fresh ChatGPT tab/window; uses the configured URL if one is set |
 | Edit/pencil | Pastes the selection into ChatGPT but does **not** press Send, so you can edit it first |
 | **aa** | Sends your configurable `aa` keyword plus the selected question |
@@ -217,7 +218,7 @@ This is useful when one interview question arrives in several caption fragments.
 | Double-down arrow | Selects from the current point to the transcript end and follows new text |
 | Up arrow | Sends the selected text to ChatGPT without an added keyword |
 
-Most actions need selected transcript text. If nothing happens, first select the question and confirm that the connection says **linked**.
+Send, aa, ss, and Edit need selected transcript text. If there is no selection, the app blocks the request and shows **Select a question first, or press Latest**. The Latest button is a safe shortcut: it selects but does not automatically send the newest sentence. Confirm the highlighted sentence, then press the action you want.
 
 `aa` and `zz` are just configurable command words. Their exact meaning comes from the prompt that you gave ChatGPT.
 
@@ -313,6 +314,7 @@ Important privacy distinction: Caption assistance has no external deployment-ver
 - Press Backspace or Delete while capturing a hotkey to clear it.
 - Press Esc to cancel the change.
 - Fresh installations leave Standard-mode Send, `aa`, `zz`, Compact, and Mute hotkeys unassigned (`—`).
+- **Latest sentence** can also be assigned a global hotkey. It selects the newest transcript sentence without sending it.
 - Edit the `aa` and `zz` fields to change those command words.
 - Set a **Compact** URL to open a specific GPT/custom GPT; leave it blank for a new normal chat.
 - Live Coding always reserves F1–F5 for plan, code, improve, edge, and complexity while that mode is active.
@@ -349,7 +351,7 @@ The recording mixes the available system audio and selected microphone. If recor
 - Deleting a saved session permanently removes its transcript and recording from this PC.
 - The app does not send the PC name, Windows username, local IP, or distribution ID to an external verification server.
 - The app-extension bridge uses only `127.0.0.1:17632` on this PC.
-- Normal local use does not require the `192.168.5.*` network.
+- The app runs on any network; there is no subnet restriction.
 - ChatGPT features use ChatGPT's internet service.
 - Cloud transcription sends audio to the cloud provider you explicitly select.
 

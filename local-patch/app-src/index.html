@@ -32,6 +32,7 @@
     <symbol id="i-send" viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="5"/><polyline points="6 11 12 5 18 11"/></symbol>
     <symbol id="i-compact" viewBox="0 0 24 24"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></symbol>
     <symbol id="i-toend" viewBox="0 0 24 24"><polyline points="7 6 12 11 17 6"/><polyline points="7 12 12 17 17 12"/><line x1="6" y1="20" x2="18" y2="20"/></symbol>
+    <symbol id="i-latest" viewBox="0 0 24 24"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="11" x2="16" y2="11"/><line x1="4" y1="16" x2="12" y2="16"/><polyline points="15 15 18 18 21 15"/><line x1="18" y1="11" x2="18" y2="18"/></symbol>
     <symbol id="i-edit" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></symbol>
     <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
     <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></symbol>
@@ -251,6 +252,7 @@
       <div class="tool-btns">
         <button class="ghost mic" id="micBtn" title="Mute the microphone system-wide (stops it reaching every app, incl. meetings)"><svg class="ic"><use href="#i-mic" id="micUse"/></svg></button>
         <button class="ghost teal" id="copyBtn" title="Copy only the selected text"><svg class="ic"><use href="#i-copy"/></svg></button>
+        <button class="ghost teal latest-select" id="latestBtn" title="Select the latest sentence without sending it"><svg class="ic"><use href="#i-latest"/></svg><span>Latest</span></button>
         <button class="ghost gkey" id="compactBtn" title="Compact this chat into a new tab  (F6)"><svg class="ic"><use href="#i-compact"/></svg></button>
         <button class="ghost gkey" id="editBtn" title="Paste the selection into ChatGPT WITHOUT sending — edit before send"><svg class="ic"><use href="#i-edit"/></svg></button>
         <button class="ghost gkey" id="aaBtn" title="Send your &quot;aa&quot; keyword + the selection to ChatGPT  (F2)">aa</button>
@@ -269,6 +271,7 @@
         <button class="ghost gkey code-btn" id="complexityBtn" data-cmd="5" title="Send command 5 + the selection: analyze complexity  (F5)">O(n)</button>
       </div>
     </div>
+    <div class="action-notice hidden" id="actionNotice" role="status" aria-live="polite"></div>
     <div id="popBackdrop" class="pop-backdrop hidden"></div>
     <div id="srcPop" class="opacity-pop src-pop hidden">
       <button class="src-opt" data-src="speaker"><svg class="ic"><use href="#i-speaker"/></svg><span>Speaker<em>interviewer</em></span></button>
@@ -356,6 +359,10 @@
       <div class="set-row">
         <input class="set-kw" id="kwBb" value="zz" maxlength="24" spellcheck="false" />
         <button class="hk" id="hkBb" data-act="bb" style="margin-left:auto">—</button>
+      </div>
+      <div class="set-row">
+        <div class="set-lbl" style="display:flex;align-items:center;gap:7px"><svg class="ic" style="width:17px;height:17px;color:var(--teal)"><use href="#i-latest"/></svg>Latest sentence</div>
+        <button class="hk" id="hkLatest" data-act="latest" style="margin-left:auto">—</button>
       </div>
       <div class="set-row">
         <div class="set-lbl">Compact</div>
