@@ -1,0 +1,10 @@
+# Build outputs of local-patch/build_asar.py.
+#
+# resources/app.asar is deliberately NOT ignored: it is the shipped runtime the app
+# actually loads, and build_asar.py needs an existing asar as the header template to
+# build from. These two are just copies of it produced during a rebuild.
+local-patch/app.asar.new
+Caption assistance-1.0.2-local/resources/app.asar.pending
+
+# API keys, if ever placed next to the app instead of userData
+*-key.txt
