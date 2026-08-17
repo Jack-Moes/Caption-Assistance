@@ -598,6 +598,7 @@ function teleMic(msg) {
 // mic-reader needed. Trade-off: audio goes to the browser's speech service (Google) while active.
 let sr = null, srWant = false, srCommitted = '', srPartial = '', srLast = 0, srWarnedNoPerm = false;
 let srCreatedAt = 0, srAlive = false, srWatch = null, srNetErrs = 0, srRestartPending = false;
+let srShortEnds = 0;   // consecutive sessions that died almost immediately -> back off instead of spinning
 // caMicSource / caTeleOn / caLastAppSend are declared near the top (the icon loop reads them at load)
 // push the Chrome-speech mic caption to Caption assistance so it records/shows it (independent of auto scroll)
 function caPostMicToApp(text, status) {
@@ -674,7 +675,7 @@ function startSpeech() {
   sr.onstart = () => { srAlive = true; log('read-along: Chrome speech recognition STARTED'); };
   sr.onaudiostart = () => { srAlive = true; };
   sr.onresult = (e) => {
-    srAlive = true; srNetErrs = 0;
+    srAlive = true; srNetErrs = 0; srShortEnds = 0;   // results are flowing -> the session is healthy
     let interim = '', final = '';
     for (let i = e.resultIndex; i < e.results.length; i++) { const t = caPickAlt(e.results[i]); if (e.results[i].isFinal) final += t + ' '; else interim += t + ' '; }
     if (srLast && Date.now() - srLast > 2500) { srCommitted = ''; srPartial = ''; }   // long pause -> fresh recognition window (KEEP the full heard log)
@@ -694,7 +695,18 @@ function startSpeech() {
     else if (e.error === 'network') { srNetErrs = Math.min(srNetErrs + 1, 6); }
     else if (e.error !== 'no-speech' && e.error !== 'aborted') { log('read-along: speech ended (' + e.error + '), restarting'); }
   };
-  sr.onend = () => { sr = null; srAlive = false; if (srWant) scheduleSpeechRestart(srNetErrs ? Math.min(srNetErrs * 500, 3000) : 150); };   // restart on pause; 150ms keeps blinking lower than 80
+  // Chrome ends a continuous session on every pause. The old fixed 150 ms restart left a capture hole
+  // that regularly swallowed the first word of the next sentence; restarting on the next tick closes it.
+  // A session that dies almost immediately (permission/device trouble) backs off so this can't spin.
+  sr.onend = () => {
+    const lived = Date.now() - srCreatedAt;
+    sr = null; srAlive = false;
+    if (!srWant) return;
+    srShortEnds = (lived < 250) ? (srShortEnds + 1) : 0;
+    if (srNetErrs) scheduleSpeechRestart(Math.min(srNetErrs * 500, 3000));
+    else if (srShortEnds >= 3) scheduleSpeechRestart(Math.min(150 * srShortEnds, 1500));
+    else scheduleSpeechRestart(0);
+  };
   try { sr.start(); } catch (e) { sr = null; scheduleSpeechRestart(300); }
 }
 function speechWatchdog() {

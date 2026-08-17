@@ -923,10 +923,21 @@ function receiveGptAnswer(r) {
   if (r.phase === 'recovered') { setAnswerStatus('Recovered · monitoring…', 'waiting'); return; }
   if (r.phase === 'error') { failGptAnswer(r.error || 'No ChatGPT response was detected.', r.text || answerText); return; }
   if (typeof r.text === 'string' && r.text) {
-    answerText = r.text;
     const out = $('gptAnswerText');
     const follow = out.scrollTop + out.clientHeight >= out.scrollHeight - 32;
-    out.textContent = answerText; out.classList.remove('empty');
+    // Each stream chunk carries the FULL answer so far. Assigning textContent every time destroyed and
+    // rebuilt the whole text node and re-laid out the entire block -- O(n) per chunk on a growing answer,
+    // ~25 times a second. When the new text is a pure extension of what is already rendered, grow the
+    // existing text node instead; fall back to a full replace on regenerate/edit or the first chunk.
+    const node = out.firstChild;
+    const grew = answerText && r.text.length > answerText.length && r.text.startsWith(answerText);
+    if (grew && node && node.nodeType === 3 && out.childNodes.length === 1 && !out.classList.contains('empty')) {
+      node.appendData(r.text.slice(answerText.length));
+    } else {
+      out.textContent = r.text;
+      out.classList.remove('empty');
+    }
+    answerText = r.text;
     if (follow) out.scrollTop = out.scrollHeight;
   }
   if (r.phase === 'final') { setAnswerStatus(r.error ? 'Complete · monitor timeout' : 'Complete', 'done'); setBusy(false); }
