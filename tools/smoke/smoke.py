@@ -1,5 +1,5 @@
 """Caption assistance regression smoke test (drives the real app over CDP)."""
-import cdp, json, time, urllib.request, subprocess, sys
+import cdp, io, json, time, urllib.request, subprocess, sys
 
 TOK = 'captionassistance-bridge-7f3a'
 results = []
@@ -167,17 +167,24 @@ J("cap.sendAction('clip')")
 time.sleep(1.5)
 check('empty clipboard guarded', J("(window.__gptRes||{}).code") == 'clipboard-empty', J("(window.__gptRes||{}).error"))
 
-J("cap.copy('What is your experience with Kubernetes?')")
-time.sleep(0.6)
-J("window.__gptRes=null")
-J("cap.sendAction('clip')")
-time.sleep(1.8)
-code = J("(window.__gptRes||{}).code")
+# NEVER exercise a real send while a tab is bound: the command would be delivered to the live
+# conversation and actually submit there. Only probe the path when nothing is bound to receive it.
+if poll().get('boundClient'):
+    code = '__bound__'
+else:
+    J("cap.copy('What is your experience with Kubernetes?')")
+    time.sleep(0.6)
+    J("window.__gptRes=null")
+    J("cap.sendAction('clip')")
+    time.sleep(1.8)
+    code = J("(window.__gptRes||{}).code")
 # no extension is bound during the suite, so getting as far as the bridge proves the clipboard text
 # was read and passed the guard
 # Headless/service sessions have no window station, so the OS clipboard is unavailable and the app
 # correctly reports it empty. Report that as skipped rather than failed.
-if code == 'clipboard-empty':
+if code == '__bound__':
+    skip('clipboard text sent to bridge', 'a ChatGPT tab is bound - a real send would post into the live conversation')
+elif code == 'clipboard-empty':
     skip('clipboard text sent to bridge', 'no clipboard access in this session (clip.exe: Access is denied)')
 else:
     check('clipboard text sent to bridge', code in ('bridge-offline', 'no-bound-tab'), code)
@@ -233,6 +240,55 @@ J("document.getElementById('endBtn').click()")
 time.sleep(0.9)
 J("document.getElementById('doneDelete').click()")
 time.sleep(2)
+
+print("")
+print("== 11. site adapter + self-check ==")
+
+# The adapter module ships in the extension, so exercise its source directly in the app's renderer.
+# location.hostname here is a file:// page, which is exactly the GENERIC fallback path that every
+# unverified site relies on.
+src = io.open('../../extension/adapters.js', encoding='utf-8').read()
+J(src)
+check('adapters module evaluates', bool(J("!!(window.CAAdapter && window.CAAdapter.selfCheck)")))
+check('known hosts registered', J("Object.keys(window.CAAdapter.BY_HOST).join(',')") ==
+      'chatgpt.com,chat.openai.com,aistudio.google.com,claude.ai',
+      J("Object.keys(window.CAAdapter.BY_HOST).join(',')"))
+
+# GENERIC against a synthetic chat DOM
+J("""(function(){
+  var d=document.createElement('div'); d.id='ca-fake-chat'; d.style.display='none';
+  d.innerHTML='<form><div contenteditable="true"></div>'
+    + '<button aria-label="Send message"></button></form>'
+    + '<div data-message-author-role="user">hello</div>'
+    + '<div data-message-author-role="assistant"><div class="markdown">an answer</div></div>';
+  document.body.appendChild(d);
+})()""")
+g = J("(function(){var a=window.CAAdapter.GENERIC;return JSON.stringify({c:!!a.composer(),s:!!a.sendBtn(),m:a.messages().length,role:a.roleOf(a.messages()[1]),body:a.bodyOf(a.messages()[1]).textContent});})()")
+check('generic adapter resolves a chat DOM', '"c":true' in g and '"s":true' in g and '"role":"assistant"' in g and 'an answer' in g, g)
+sc = J("(function(){var r=window.CAAdapter.selfCheck();return JSON.stringify(r);})()")
+check('selfCheck reports ok on a usable page', '"ok":true' in sc, sc)
+J("var n=document.getElementById('ca-fake-chat'); if(n) n.remove();")
+sc2 = J("(function(){var r=window.CAAdapter.selfCheck();return JSON.stringify(r);})()")
+check('selfCheck reports NOT ok once the page has no composer', '"ok":false' in sc2, sc2)
+
+# app side: a broken adapter must reach the UI rather than fail silently on the next send
+def post_ext(payload):
+    req = urllib.request.Request('http://127.0.0.1:17632/from-ext?token=' + TOK,
+                                 data=json.dumps(payload).encode(),
+                                 headers={'Content-Type': 'application/json'}, method='POST')
+    urllib.request.urlopen(req, timeout=5).read()
+
+post_ext({'type': 'adapter-check', 'payload': {'adapter': 'chatgpt', 'host': 'chatgpt.com', 'ok': True, 'composer': True, 'sendBtn': True, 'messages': 4}})
+time.sleep(1.0)
+check('healthy adapter shown in the connection tooltip',
+      'chatgpt' in (J("(document.getElementById('gptConn')||{}).title") or ''),
+      J("(document.getElementById('gptConn')||{}).title"))
+
+post_ext({'type': 'adapter-check', 'payload': {'adapter': 'aistudio', 'host': 'aistudio.google.com', 'ok': False, 'composer': False, 'sendBtn': False, 'messages': 0}})
+time.sleep(1.2)
+check('broken adapter raises a visible warning',
+      'not recognised' in (J("(document.getElementById('actionNotice')||{}).textContent") or ''),
+      J("(document.getElementById('actionNotice')||{}).textContent"))
 
 c.close()
 bad = [r for r in results if not r[1]]

@@ -1007,6 +1007,10 @@ if (window.cap.onGptStatus) window.cap.onGptStatus((s) => {
   if (s.requestId && s.requestId === answerRequestId && s.phase === 'delivered') setAnswerStatus('Sending…', 'waiting');
   if (s.requestId && s.requestId === answerRequestId && s.phase === 'submitted') setAnswerStatus('Generating…', 'waiting');
   if (s.requestId && s.requestId === answerRequestId && s.phase === 'recovering') setAnswerStatus('Recovering…', 'waiting');
+  if (s.adapter) {
+    lastAdapter = s.adapter;
+    if (!s.adapter.ok) showActionNotice('The bound page’s layout was not recognised (' + (s.adapter.adapter || '?') + ') — sending may fail. Reload the extension and refresh the tab.', 'warn', 6000);
+  }
   if (typeof s.connected !== 'boolean') return;
   const el = $('bridgeStatus');
   if (el) {
@@ -1017,6 +1021,7 @@ if (window.cap.onGptStatus) window.cap.onGptStatus((s) => {
   if (s.connected) { lastConn = Date.now(); if (typeof s.bound === 'boolean') connBound = s.bound; }
   updateConn();
 });
+let lastAdapter = null;   // last self-check from the bound page's site adapter
 function updateConn() {
   const on = (Date.now() - lastConn) < 3500;
   const text = on ? (connBound ? '● linked' : '● bind a tab') : '● no bridge';
@@ -1027,7 +1032,7 @@ function updateConn() {
     el.classList.toggle('on', on && connBound);
     el.classList.toggle('warn', on && !connBound);
     el.textContent = text;
-    el.title = title;
+    el.title = title + (lastAdapter ? (' · site adapter: ' + lastAdapter.adapter + (lastAdapter.ok ? ' ✓' : ' — layout not recognised')) : '');
   });
 }
 setInterval(updateConn, 1500);

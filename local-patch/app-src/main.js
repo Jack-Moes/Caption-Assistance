@@ -1052,6 +1052,9 @@ function handleFromExt(o) {
   if (o.type === 'mic-caption') win.webContents.send('caption', { src: 'mic', status: o.status || 'partial', text: String(o.text || ''), from: 'chrome' });
   else if (o.type === 'browser-mic') win.webContents.send('browser-mic', { label: String(o.label || '') });
   else if (o.type === 'console-closed') { consoleOn = false; win.webContents.send('console-closed'); }
+  // The bound page reports which selectors its adapter actually resolved. Ride the existing gpt-status
+  // channel so a stale site layout shows up in the UI instead of failing silently on the next send.
+  else if (o.type === 'adapter-check') emitGptStatus({ connected: true, bound: boundClient != null, adapter: o.payload || {} });
   else if (o.type === 'toggle-autoscroll') { win.webContents.send('toggle-autoscroll'); }
   else if (o.type === 'gpt-answer') {
     if (currentGptRequest && String(o.requestId || '') === currentGptRequest.requestId) {

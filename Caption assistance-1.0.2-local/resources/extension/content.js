@@ -51,18 +51,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
-function findComposer() {
-  return document.querySelector('#prompt-textarea')
-    || document.querySelector('div.ProseMirror[contenteditable="true"]')
-    || document.querySelector('form [contenteditable="true"]')
-    || document.querySelector('form textarea')
-    || document.querySelector('textarea');
-}
-function findSendButton() {
-  return document.querySelector('button[data-testid="send-button"]')
-    || document.querySelector('button[aria-label*="Send" i]')
-    || document.querySelector('form button[type="submit"]');
-}
+// Every selector now lives in adapters.js, keyed by host, so one site's markup change cannot break the
+// others and supporting a new site is a table entry rather than edits scattered through this file.
+function CA() { return (window.CAAdapter && window.CAAdapter.current()) || null; }
+function findComposer() { const a = CA(); return a ? a.composer() : null; }
+function findSendButton() { const a = CA(); return a ? a.sendBtn() : null; }
+function findAnchor() { const a = CA(); return a ? a.anchor() : null; }
 async function waitFor(fn, ms) {
   const start = Date.now();
   while (Date.now() - start < ms) { const v = fn(); if (v) return v; await sleep(8); }
@@ -70,35 +64,33 @@ async function waitFor(fn, ms) {
 }
 
 let caAnswerWatchToken = 0, caAnswerWatchCleanup = null;
-function assistantNodes() { return Array.from(document.querySelectorAll('[data-message-author-role="assistant"]')); }
+function assistantNodes() { const a = CA(); if (!a) return []; return a.messages().filter((n) => a.roleOf(n) === 'assistant'); }
 function answerTextOf(node) {
   if (!node) return '';
-  const body = node.querySelector('.markdown') || node;
+  const a = CA();
+  const body = a ? a.bodyOf(node) : node;
   return (body.innerText || body.textContent || '').trim();
 }
 function answerBaseline() {
   const nodes = assistantNodes();
   return { count: nodes.length, node: nodes.length ? nodes[nodes.length - 1] : null, text: nodes.length ? answerTextOf(nodes[nodes.length - 1]) : '' };
 }
-function generationActive() {
-  return !!(document.querySelector('button[data-testid="stop-button"]')
-    || document.querySelector('button[aria-label*="Stop generating" i]')
-    || document.querySelector('button[aria-label*="Stop streaming" i]'));
-}
+function generationActive() { const a = CA(); return a ? !!a.generating() : false; }
 function reportAnswer(payload) {
   try {
     const p = chrome.runtime.sendMessage({ action: 'gptAnswer', payload: payload });
     if (p && p.catch) p.catch(() => {});
   } catch (e) {}
 }
-function messageNodes() { return Array.from(document.querySelectorAll('[data-message-author-role]')); }
+function messageNodes() { const a = CA(); return a ? a.messages() : []; }
 function normalizePromptText(text) { return String(text || '').replace(/\s+/g, ' ').trim(); }
 function findMatchingUserNode(expectedText) {
   const expected = normalizePromptText(expectedText);
   if (!expected) return null;
   const nodes = messageNodes();
+  const ad = CA();
   for (let i = nodes.length - 1; i >= 0; i--) {
-    if (nodes[i].getAttribute('data-message-author-role') !== 'user') continue;
+    if (!ad || ad.roleOf(nodes[i]) !== 'user') continue;
     if (normalizePromptText(nodes[i].innerText || nodes[i].textContent) === expected) return nodes[i];
   }
   return null;
@@ -108,7 +100,8 @@ function assistantAfterUser(userNode) {
   const nodes = messageNodes();
   const idx = nodes.indexOf(userNode);
   if (idx < 0) return null;
-  for (let i = idx + 1; i < nodes.length; i++) if (nodes[i].getAttribute('data-message-author-role') === 'assistant') return nodes[i];
+  const ad = CA();
+  for (let i = idx + 1; i < nodes.length; i++) if (ad && ad.roleOf(nodes[i]) === 'assistant') return nodes[i];
   return null;
 }
 function startAssistantAnswerWatch(requestId, baseline, userNode, recovered) {
@@ -192,7 +185,8 @@ async function recoverAnswer(requestId, expectedText) {
 async function insertAndSend(text, submit, meta) {
   log('insertAndSend', (text || '').length, 'chars', 'submit', submit !== false);
   const baseline = (submit !== false && meta && meta.returnToApp && meta.requestId) ? answerBaseline() : null;
-  const userCountBefore = document.querySelectorAll('[data-message-author-role="user"]').length;
+  const userCount = () => { const a = CA(); return a ? a.messages().filter((n) => a.roleOf(n) === 'user').length : 0; };
+  const userCountBefore = userCount();
   if (baseline && generationActive()) throw new Error('ChatGPT is already generating a response. Wait for it to finish, then try again.');
   if (submit !== false && !baseline) caAnswerWatchToken++;   // a normal foreground send supersedes any older background watcher
   const el = await waitFor(findComposer, 8000);
@@ -229,7 +223,7 @@ async function insertAndSend(text, submit, meta) {
   // React enables Send on the next render; yield one frame instead of a fixed delay.
   await new Promise((r) => requestAnimationFrame(() => r()));
   const btn = await waitFor(() => { const b = findSendButton(); return (b && !b.disabled) ? b : null; }, 5000);
-  const confirmSubmit = () => waitFor(() => document.querySelectorAll('[data-message-author-role="user"]').length > userCountBefore || generationActive(), 3500);
+  const confirmSubmit = () => waitFor(() => userCount() > userCountBefore || generationActive(), 3500);
   // Attach the observer BEFORE awaiting confirmation: confirmation costs 50-200 ms and ChatGPT can
   // already be emitting its first tokens inside that window. Cancelled again if the submit never lands.
   const abortWatch = () => { if (baseline) { caAnswerWatchToken++; if (caAnswerWatchCleanup) caAnswerWatchCleanup(); } };
@@ -249,12 +243,13 @@ async function insertAndSend(text, submit, meta) {
 }
 
 function scrapeConversation() {
-  const nodes = document.querySelectorAll('[data-message-author-role]');
+  const ad = CA();
+  const nodes = ad ? ad.messages() : [];
   log('scrape: found', nodes.length, 'message nodes');
   if (nodes.length) {
     const parts = [];
     nodes.forEach((n) => {
-      const role = n.getAttribute('data-message-author-role');
+      const role = ad.roleOf(n);
       const txt = (n.innerText || '').trim();
       if (txt) parts.push((role === 'user' ? 'User: ' : 'Assistant: ') + txt);
     });
@@ -320,17 +315,31 @@ function applyBindColor(bound, serverUp) {
 async function onBindClick(e) {
   e.preventDefault(); e.stopPropagation();
   if (caStale) { markStale(); return; }
-  try { const r = await sendMsg({ action: 'toggleBind' }); log('toggleBind ->', r); applyBindColor(r && r.bound, r && r.serverUp); }
+  try { const r = await sendMsg({ action: 'toggleBind' }); log('toggleBind ->', r); applyBindColor(r && r.bound, r && r.serverUp); if (r && r.bound) reportAdapterCheck(true); }
   catch (err) { if (isStaleErr(err)) markStale(); else warn('toggleBind failed:', err); }
+}
+let caLastCheck = '';
+function reportAdapterCheck(force) {
+  if (!window.CAAdapter) return;
+  let res; try { res = window.CAAdapter.selfCheck(); } catch (e) { return; }
+  const key = JSON.stringify(res);
+  if (!force && key === caLastCheck) return;   // only speak up when the picture actually changes
+  caLastCheck = key;
+  log('adapter selfCheck', key);
+  try { const p = chrome.runtime.sendMessage({ action: 'adapterCheck', payload: res }); if (p && p.catch) p.catch(() => {}); } catch (e) {}
 }
 async function refreshBindState() {
   if (caStale) return;
-  try { const r = await sendMsg({ action: 'getBindState' }); applyBindColor(r && r.bound, r && r.serverUp); }
+  try {
+    const r = await sendMsg({ action: 'getBindState' });
+    applyBindColor(r && r.bound, r && r.serverUp);
+    if (r && r.bound) reportAdapterCheck(false);
+  }
   catch (e) { if (isStaleErr(e)) markStale(); }
 }
 function ensureBindButton() {
   if (!ctxValid()) { const b = document.getElementById('ca-bind-btn'); if (b) b.remove(); return; }   // orphaned after extension reload
-  const plus = document.querySelector('[data-testid="composer-plus-btn"]');
+  const plus = findAnchor();
   let btn = document.getElementById('ca-bind-btn');
   if (!plus) { if (btn) btn.style.display = 'none'; return; }
   if (!btn) {
@@ -373,11 +382,8 @@ function caIconXY(plus, idx) {   // idx: 0=bind, 1=copy, 2=auto-scroll
 }
 // ---------- Copy button: copies the LAST ChatGPT answer; blinks a check for 0.5s ----------
 function lastAnswerText() {
-  const msgs = document.querySelectorAll('[data-message-author-role="assistant"]');
-  if (!msgs.length) return '';
-  const last = msgs[msgs.length - 1];
-  const md = last.querySelector('.markdown') || last;
-  return (md.innerText || md.textContent || '').trim();
+  const msgs = assistantNodes();
+  return msgs.length ? answerTextOf(msgs[msgs.length - 1]) : '';
 }
 async function onCopyClick(e) {
   e.preventDefault(); e.stopPropagation();
@@ -389,7 +395,7 @@ async function onCopyClick(e) {
 }
 function ensureCopyButton() {
   if (!ctxValid()) { const b = document.getElementById('ca-copy-btn'); if (b) b.remove(); return; }
-  const plus = document.querySelector('[data-testid="composer-plus-btn"]');
+  const plus = findAnchor();
   let btn = document.getElementById('ca-copy-btn');
   if (!plus) { if (btn) btn.style.display = 'none'; return; }
   if (!btn) {
@@ -419,7 +425,7 @@ async function onScrollClick(e) {
 }
 function ensureScrollButton() {
   if (!ctxValid()) { const b = document.getElementById('ca-scroll-btn'); if (b) b.remove(); return; }
-  const plus = document.querySelector('[data-testid="composer-plus-btn"]');
+  const plus = findAnchor();
   let btn = document.getElementById('ca-scroll-btn');
   if (!plus) { if (btn) btn.style.display = 'none'; return; }
   if (!btn) {
@@ -497,9 +503,10 @@ function tpSentencesOf(block) {
   return out;
 }
 function tpExtract() {
-  const msgs = document.querySelectorAll('[data-message-author-role="assistant"]');
+  const msgs = assistantNodes();
   if (!msgs.length) return null;
-  const md = msgs[msgs.length - 1].querySelector('.markdown') || msgs[msgs.length - 1];
+  const ad = CA();
+  const md = ad ? ad.bodyOf(msgs[msgs.length - 1]) : msgs[msgs.length - 1];
   const blocks = [];
   md.querySelectorAll(':scope > *').forEach((ch) => {
     const tag = ch.tagName ? ch.tagName.toLowerCase() : '';

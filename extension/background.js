@@ -355,6 +355,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'micToApp') { postToBridge({ type: 'mic-caption', text: msg.text, status: msg.status }); return; }
   if (msg.action === 'browserMic') { postToBridge({ type: 'browser-mic', label: msg.label }); return; }
   if (msg.action === 'consoleClosed') { postToBridge({ type: 'console-closed' }); return; }
+  if (msg.action === 'adapterCheck') { postToBridge({ type: 'adapter-check', payload: msg.payload }); return; }   // which selectors resolved on the bound page
   if (msg.action === 'toggleAutoscroll') { postToBridge({ type: 'toggle-autoscroll' }); return; }
   if (msg.action === 'gptAnswer') {
     if (tid !== boundTabId || !msg.payload) return;   // only the explicitly bound ChatGPT tab may return answers
