@@ -52,7 +52,40 @@ def main() -> None:
             payloads.append(data)
             offset += len(data)
 
+    def add_new(node: dict, directory: Path) -> None:
+        """Append files that exist in SOURCE_DIR but not in the original header.
+
+        The header-driven pass above can only repack files the original archive already knew about, so a
+        newly added source file was silently left out of the build and 404'd at runtime.
+        """
+        nonlocal offset
+        files = node.setdefault("files", {})
+        for entry in sorted(directory.iterdir(), key=lambda e: e.name):
+            if entry.name == "__pycache__":
+                continue
+            if entry.is_dir():
+                child = files.get(entry.name)
+                if child is None:
+                    child = files[entry.name] = {"files": {}}
+                if "files" not in child:
+                    continue                      # a file already occupies this name
+                add_new(child, entry)
+                continue
+            existing = files.get(entry.name)
+            if existing is not None and "files" not in existing:
+                continue                          # already repacked by update()
+            data = entry.read_bytes()
+            files[entry.name] = {
+                "size": len(data),
+                "integrity": digest(data),
+                "offset": str(offset),
+            }
+            payloads.append(data)
+            offset += len(data)
+            print(f"  + added {entry.relative_to(source)}")
+
     update(header)
+    add_new(header, source)
     encoded = json.dumps(header, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     pickle_size = (4 + len(encoded) + 3) & ~3
     outer_size = 4 + pickle_size

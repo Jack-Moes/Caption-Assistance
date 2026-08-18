@@ -65,6 +65,7 @@ let resumeAnchor = null;     // after a send: {paraIdx, offset} to restart selec
 let busy = false, busyTimer = null, busyBtn = null;   // a ChatGPT action is in flight -> spinner on the clicked button, block re-clicks
 let sentMarks = [];          // caption positions the user sent from (send/aa/compact/paste) -> visual markers
 let followStopped = false;   // "stop snipping": freeze the growing select-till-end selection
+let autoQuestion = true;     // Latest prefers a detected question over the raw last sentence
 let lastConn = 0, connBound = false;   // ChatGPT bridge connection indicator
 let answerInApp = false;
 try { answerInApp = localStorage.getItem('ca_answer_in_app') === '1'; } catch (e) {}
@@ -477,7 +478,38 @@ function selectRange(node, s, e) {
   r.setEnd(node, Math.max(0, Math.min(e, len)));
   const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
 }
+// Latest used to grab the literally last sentence, which in a live transcript is often the tail of the
+// interviewer still talking, or an acknowledgement. When question detection is on, prefer the newest
+// sentence that actually reads as a question (offline pattern scoring, see question-extract.js). It only
+// changes WHAT gets selected -- nothing is ever sent without the user pressing an action.
+const AUTOQ_MIN_CONF = 0.6;
+const AUTOQ_LOOKBACK = 4;   // paragraphs to scan back before falling back to plain "last sentence"
+function selectDetectedQuestion() {
+  if (!autoQuestion || !window.CAQuestionDetect) return null;
+  const divs = captionEl.querySelectorAll('.para');
+  const stop = Math.max(0, divs.length - AUTOQ_LOOKBACK);
+  for (let i = divs.length - 1; i >= stop; i--) {
+    const node = ptextOf(divs[i]);
+    const text = node && node.textContent;
+    if (!text || !text.trim()) continue;
+    let hit = null;
+    try { hit = window.CAQuestionDetect.extract(text); } catch (e) { return null; }
+    if (!hit || hit.confidence < AUTOQ_MIN_CONF) continue;
+    return { node: node, div: divs[i], hit: hit };
+  }
+  return null;
+}
 function selectLatestSentence() {
+  const detected = selectDetectedQuestion();
+  if (detected) {
+    selectRange(detected.node, detected.hit.start, detected.hit.end);
+    followStopped = true;
+    resumeAnchor = null;
+    const tb0 = $('toEndBtn'); if (tb0) tb0.classList.remove('snipping');
+    try { detected.div.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+    scheduleMinimap();
+    return selectionCaptionText();
+  }
   const divs = captionEl.querySelectorAll('.para');
   for (let i = divs.length - 1; i >= 0; i--) {
     const node = ptextOf(divs[i]);
@@ -1312,6 +1344,15 @@ if ($('micInspectorToggle')) $('micInspectorToggle').addEventListener('change', 
 applyScrollState();
 
 // Read-along test console (on the ChatGPT tab) — off by default; toggled from Settings
+// question detection: persisted, defaults ON (it only changes what Latest selects, never sends)
+try { const v = localStorage.getItem('ca_auto_q'); if (v !== null) autoQuestion = v === '1'; } catch (e) {}
+if ($('autoQToggle')) {
+  $('autoQToggle').checked = autoQuestion;
+  $('autoQToggle').addEventListener('change', () => {
+    autoQuestion = $('autoQToggle').checked;
+    try { localStorage.setItem('ca_auto_q', autoQuestion ? '1' : '0'); } catch (e) {}
+  });
+}
 if ($('consoleToggle')) {
   const applyConsole = () => window.cap.setConsole($('consoleToggle').checked);
   $('consoleToggle').addEventListener('change', applyConsole);

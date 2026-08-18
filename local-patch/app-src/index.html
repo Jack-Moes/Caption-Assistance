@@ -391,6 +391,10 @@
         <div class="help-note" style="opacity:.55; font-size:10px; margin-top:5px">when the line you're reading reaches this far down the page, scroll it up to here (% from top)</div>
       </div>
       <div class="op-row op-toggle" style="margin-top:13px; padding-top:13px; border-top:1px solid var(--border)">
+        <span class="op-title" style="margin:0">Detect questions <span class="help-note" style="opacity:.6; display:block; font-weight:400; margin-top:2px">Latest picks the interviewer's question, not just the last line</span></span>
+        <label class="switch"><input id="autoQToggle" type="checkbox" /><span class="slider-sw"></span></label>
+      </div>
+      <div class="op-row op-toggle" style="margin-top:13px; padding-top:13px; border-top:1px solid var(--border)">
         <span class="op-title" style="margin:0">Auto scroll debug <span class="help-note" style="opacity:.6; display:block; font-weight:400; margin-top:2px">on ChatGPT tab</span></span>
         <label class="switch"><input id="consoleToggle" type="checkbox" /><span class="slider-sw"></span></label>
       </div>
@@ -498,6 +502,7 @@
   </div>
 
 </div>
+<script src="question-extract.js"></script>
 <script src="transcribe.js"></script>
 <script src="renderer.js"></script>
 </body>

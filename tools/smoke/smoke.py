@@ -182,6 +182,58 @@ if code == 'clipboard-empty':
 else:
     check('clipboard text sent to bridge', code in ('bridge-offline', 'no-bound-tab'), code)
 
+print("")
+print("== 10. question detection (offline) ==")
+check('extractor loaded', bool(J("!!(window.CAQuestionDetect && window.CAQuestionDetect.extract)")))
+
+CASES = [
+    ("So, tell me about a time you scaled a system.", True),
+    ("What is your experience with Kubernetes", True),
+    ("Can you walk me through your deployment pipeline", True),
+    ("How would you handle a cache stampede?", True),
+    ("Okay.", False),
+    ("Yeah that makes sense.", False),
+    ("Thanks.", False),
+    ("Good morning", False),
+]
+bad_cases = []
+for text, want in CASES:
+    got = J("(function(){var r=window.CAQuestionDetect.extract(" + json.dumps(text) + ");"
+            "return r?('Y '+r.confidence.toFixed(2)+' | '+r.text):'N';})()")
+    hit = str(got).startswith('Y')
+    if hit != want:
+        bad_cases.append('%r want=%s got=%s' % (text, want, got))
+check('question vs non-question cases (%d)' % len(CASES), not bad_cases, '; '.join(bad_cases))
+
+# picks the newest question when acknowledgements follow it
+multi = J("(function(){var r=window.CAQuestionDetect.extract('Right. Got it. Can you describe your testing strategy');"
+          "return r?r.text:'N';})()")
+check('picks the question, not the filler', 'describe your testing strategy' in str(multi), multi)
+
+# Latest must prefer a detected question over the literal last sentence
+J("document.getElementById('startNew').click()")
+time.sleep(0.7)
+J("document.getElementById('startSession').click()")
+time.sleep(0.8)
+J("document.getElementById('permOk').click()")
+time.sleep(4)
+check('Live Captions ready for detection run', wait_for(lc_ready, 60, 2))
+say('How do you handle database migrations? Yeah, okay, sure.')
+got_q = wait_for(lambda: 'migration' in (spk_text() or '').lower(), 30, 2)
+check('transcript for detection captured', got_q, spk_text()[:90])
+if got_q:
+    J("document.getElementById('autoQToggle').checked=true; document.getElementById('autoQToggle').dispatchEvent(new Event('change',{bubbles:true}))")
+    J("document.getElementById('latestBtn').click()")
+    time.sleep(0.6)
+    picked = J("window.__captionSelText?window.__captionSelText():''") or ''
+    check('Latest selects the question sentence', 'migration' in picked.lower(), picked[:80])
+else:
+    skip('Latest selects the question sentence', 'no transcript captured to detect from')
+J("document.getElementById('endBtn').click()")
+time.sleep(0.9)
+J("document.getElementById('doneDelete').click()")
+time.sleep(2)
+
 c.close()
 bad = [r for r in results if not r[1]]
 print('')
