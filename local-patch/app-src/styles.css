@@ -272,6 +272,10 @@ body.dark .mic-select option, body.dark .set-mic option { background: #1a252f; c
 .ghost.purple:hover { background: #f3f3ff; }
 .ghost.teal { color: var(--teal); border-color: var(--teal-border); }
 .ghost.teal:hover { background: #eef7f6; }
+/* "till the end" ACTIVE: the selection keeps growing with new captions. Without this the class toggled
+   but nothing changed on screen, so there was no way to tell whether the mode was on. */
+.ghost.snipping { background: #e6f4f3; box-shadow: inset 0 0 0 2px var(--teal); }
+.ghost.snipping:hover { background: #d9edec; }
 /* select-till-end: no active-state styling — silent toggle, just wait for the next click */
 .ghost.send { background: var(--teal); border-color: var(--teal); color: #fff; }   /* primary action: send to ChatGPT */
 .ghost.send:hover { background: var(--teal-hover); border-color: var(--teal-hover); }
@@ -469,6 +473,8 @@ body.dark .side { color: var(--sub); }           /* dark teal was ~2.3:1 on the 
 body.dark .side:hover { background: #111a2d; }
 body.dark .side.active { background: #111d3b; color: var(--welcome); }
 body.dark .ghost.purple { border-color: var(--border); color: #9a9cf0; }   /* copy button: subtle border on dark */
+body.dark .ghost.snipping { background: #12233f; box-shadow: inset 0 0 0 2px #2ca7ff; }
+body.dark .ghost.snipping:hover { background: #16294a; }
 body.dark .prompt-box { border-color: #2b3b60; background: #0a1020; box-shadow: 0 14px 36px rgba(0,0,0,.28); }
 body.dark .prompt-box-h { background: #080d1b; border-bottom-color: #2b3b60; color: #f2f6ff; }
 body.dark .prompt-text { background: #0d1426; color: #dce8ff; caret-color: #73d7ff; }

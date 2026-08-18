@@ -36,10 +36,13 @@ function transcribeKeys() {
   };
 }
 // per-source engines, set independently. speaker: system(LiveCaptions) | local(Vosk) | deepgram | elevenlabs | speechmatics.
-// mic: browser(Chrome speech, works with NewCoo) | local(Vosk) | deepgram | elevenlabs | speechmatics.
+// mic: windows(WinRT speech, free+offline) | browser(Chrome speech, works with NewCoo) | local(Vosk) | deepgram | elevenlabs | speechmatics.
 let speakerEngine = 'system';
-let micEngine = 'browser';
-let micReaderPaused = false;  // WinRT mic-reader runs only when micEngine === 'browser' (fallback next to Chrome speech)
+let micEngine = 'windows';
+// The WinRT mic-reader is a first-class engine ('windows'), not just the browser-mode fallback: it needs no
+// Python, no key and no network, and it reads the mic through the same Windows audio stack Core Audio uses --
+// so it works on machines where PyAudio (Vosk) cannot even see the capture device.
+let micReaderPaused = false;
 let readerPaused = false;     // Live Captions reader paused when a non-system engine is active
 let localStt = { mic: null, speaker: null };   // local GPU (RealtimeSTT) subprocesses, one per source
 
@@ -256,7 +259,11 @@ function ensureLiveCaptions() {
 
 function startReader() {
   if (quitting || readerPaused || !win || win.isDestroyed()) return;
-  try { if (reader) reader.kill(); } catch (e) {}   // never run two Live Captions readers at once
+  // Drop the handle BEFORE killing. The old process's exit handler checks whether it is still the
+  // tracked reader, so an intentional kill can no longer schedule its own restart -- that is how two
+  // readers ended up fighting over the same Live Captions window. Same guard spawnLocalStt() uses.
+  const previous = reader; reader = null;
+  try { if (previous) previous.kill(); } catch (e) {}
   let ps;
   try {
     ps = spawn('powershell.exe',
@@ -276,7 +283,11 @@ function startReader() {
       if (win && !win.isDestroyed()) win.webContents.send('caption', obj);
     } catch (e) { /* ignore malformed lines */ }
   });
-  const restart = () => { if (!quitting && !readerPaused && win && !win.isDestroyed()) { restartTimer = setTimeout(startReader, 1000); } };
+  const restart = () => {
+    if (reader !== ps) return;   // superseded on purpose -> this exit is expected, do not respawn
+    reader = null;
+    if (!quitting && !readerPaused && win && !win.isDestroyed()) { clearTimeout(restartTimer); restartTimer = setTimeout(startReader, 1000); }
+  };
   ps.on('exit', restart);     // reader died -> back off and restart while the app is open
   ps.on('error', restart);    // spawn failed asynchronously (no listener would crash the app)
 }
@@ -830,6 +841,7 @@ function startMicReader() {
   if (micReader || quitting) return;
   try { micReader = spawn(scriptPath('mic-reader.exe'), [String(process.pid)], { windowsHide: true }); }
   catch (e) { return; }
+  const ps = micReader;   // stable handle so the lifecycle guards below can tell 'died' from 'replaced'
   let buf = '';
   micReader.stdout.on('data', (d) => {
     buf += d.toString(); let i;
@@ -837,8 +849,12 @@ function startMicReader() {
       const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
       if (!line) continue;
       let o; try { o = JSON.parse(line); } catch (e) { continue; }
-      if (!o || o.text == null) continue;
-      if (micEngine !== 'browser') continue;   // WinRT reader is only the browser-mode fallback; local/cloud drive their own
+      if (!o) continue;
+      if (micEngine !== 'browser' && micEngine !== 'windows') continue;   // local/cloud engines drive their own captions
+      // The reader reports its own failures (blocked OS setting, unusable device). These used to be dropped
+      // here because only partial/final were handled, so a dead mic engine looked exactly like silence.
+      if (o.status === 'error') { sendEngineErrorThrottled('mic', micReaderHint(o.text), 'windows'); continue; }
+      if (o.text == null) continue;
       // (1) live 'mic' caption source -> the caption window (tagged so it can be filtered / merged)
       if (win && !win.isDestroyed() && (o.status === 'partial' || o.status === 'final')) {
         win.webContents.send('caption', { src: 'mic', status: o.status, text: o.text });
@@ -847,8 +863,8 @@ function startMicReader() {
       if (teleOn) feedTele(o.text, o.status);
     }
   });
-  micReader.on('exit', () => { micReader = null; if (!quitting && !micReaderPaused) setTimeout(startMicReader, 800); });
-  micReader.on('error', () => { micReader = null; });
+  ps.on('exit', () => { if (micReader !== ps) return; micReader = null; if (!quitting && !micReaderPaused) setTimeout(startMicReader, 800); });
+  ps.on('error', () => { if (micReader === ps) micReader = null; });
 }
 // shared teleprompter accumulation: complete utterances append, partials replace the tail, a >2.5s gap
 // starts a fresh reading window. Fed by the WinRT reader (system mode) OR the renderer (cloud modes).
@@ -875,15 +891,73 @@ ipcMain.handle('save-key', (e, engine, key) => {   // save a pasted API key to i
   try { fs.writeFileSync(path.join(dir, f), String(key).trim() + '\n'); return { ok: true }; } catch (err) { return { ok: false, error: String(err) }; }
 });
 // ---- Local GPU STT (RealtimeSTT / faster-whisper on CUDA) via a Python subprocess per source ----
+// Resolve a REAL interpreter path. Spawning the bare name 'python' looked fine but failed with ENOENT on
+// machines where the only thing on PATH is the WindowsApps alias stub, which child_process cannot exec --
+// so local transcription silently never started. Probe the usual install roots, then ask py/python where
+// they actually live. Cached: this runs at most once per app start.
+let _pythonExe;
 function pythonExe() {
-  for (const p of ['C:\\Python\\Python312\\python.exe', 'python']) { if (p === 'python' || fs.existsSync(p)) return p; }
-  return 'python';
+  if (_pythonExe !== undefined) return _pythonExe;
+  const cands = ['C:\\Python\\Python312\\python.exe'];
+  const roots = [
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs', 'Python'),
+    process.env.ProgramFiles && path.join(process.env.ProgramFiles, 'Python'),
+    'C:\\Python'
+  ].filter(Boolean);
+  for (const root of roots) {
+    try { for (const d of fs.readdirSync(root)) if (/^Python3/i.test(d)) cands.push(path.join(root, d, 'python.exe')); }
+    catch (e) {}
+  }
+  _pythonExe = '';
+  for (const p of cands) { try { if (fs.existsSync(p)) { _pythonExe = p; break; } } catch (e) {} }
+  if (!_pythonExe) {
+    for (const probe of [['py', ['-3', '-c', 'import sys;print(sys.executable)']], ['python', ['-c', 'import sys;print(sys.executable)']]]) {
+      try {
+        const r = spawnSync(probe[0], probe[1], { windowsHide: true, encoding: 'utf8', timeout: 6000 });
+        const out = String((r && r.stdout) || '').trim().split(/\r?\n/).pop().trim();
+        if (r && r.status === 0 && out && fs.existsSync(out)) { _pythonExe = out; break; }
+      } catch (e) {}
+    }
+  }
+  console.log('[CA-main] python ->', _pythonExe || '(NOT FOUND)');
+  return _pythonExe;
+}
+// Surface an engine failure in the UI. A spawn error used to go to console only, so the settings panel
+// kept showing "Local (Vosk)" while nothing was transcribing.
+function sendEngineError(src, detail, engine) {
+  engine = engine || 'local';
+  console.error('[CA-main] ' + engine + ' STT ' + src + ': ' + detail);
+  if (win && !win.isDestroyed()) win.webContents.send('engine-status', { engine: engine, src: src, state: 'error', detail: detail });
+}
+// The WinRT recognizer repeats the same failure several times a second. Report a given message once, and
+// only re-report it after a pause, so one bad state cannot flood the UI or the log.
+const _engErrSeen = {};
+function sendEngineErrorThrottled(src, detail, engine) {
+  const key = src + '|' + detail;
+  const now = Date.now();
+  if (_engErrSeen[src] && _engErrSeen[src].key === key && now - _engErrSeen[src].at < 15000) return;
+  _engErrSeen[src] = { key: key, at: now };
+  sendEngineError(src, detail, engine);
+}
+// Turn the raw WinRT failure into something the user can act on. The privacy-policy error is by far the
+// most common: Windows blocks speech recognition entirely until the OS toggle is accepted.
+function micReaderHint(raw) {
+  const t = String(raw || '');
+  const lastLine = t.split(/[\r\n]+/).filter(Boolean).pop() || t;
+  if (/privacy policy/i.test(t)) return 'Windows speech is blocked by an OS setting - open Settings > Privacy & security > Speech and turn ON "Online speech recognition", then pick the engine again.';
+  if (/UserCanceled|not supported|no audio|device/i.test(t)) return 'Windows speech could not use this microphone (' + lastLine.trim().slice(0, 120) + '). Try another mic, or switch the Mic engine to Browser.';
+  return 'Windows speech error: ' + lastLine.trim().slice(0, 160);
 }
 let localFail = { mic: 0, speaker: 0 };   // consecutive fast-crash counter (prevents an infinite respawn -> OOM)
 function spawnLocalStt(src, deviceName) {
+  const py = pythonExe();
+  if (!py) { sendEngineError(src, 'Python was not found — install Python 3.10-3.12 from python.org (tick "Add to PATH"), then click "Set up local model"'); return null; }
   const args = ['-u', scriptPath('stt-local.py'), '--src', src];
   if (src === 'mic' && deviceName) args.push('--device', deviceName);
-  let ps; try { ps = spawn(pythonExe(), args, { windowsHide: true, cwd: __dirname }); } catch (e) { console.error('[CA-main] local STT spawn failed', e && e.message); return null; }
+  // cwd MUST be a real directory. When packaged, __dirname points inside app.asar, which does not exist on
+  // disk -- spawn then fails with ENOENT and blames the executable, which is why this looked like a missing
+  // Python for so long. scriptsDir is process.resourcesPath when packaged, __dirname in dev.
+  let ps; try { ps = spawn(py, args, { windowsHide: true, cwd: scriptsDir }); } catch (e) { sendEngineError(src, 'could not start local transcription: ' + (e && e.message)); return null; }
   const startedAt = Date.now(); let gotReady = false, buf = '';
   ps.stdout.on('data', (d) => {
     buf += d.toString(); let i;
@@ -919,7 +993,12 @@ function spawnLocalStt(src, deviceName) {
     } else { localFail[src] = 0; }
     setTimeout(() => { const w = (src === 'mic') ? (micEngine === 'local') : (speakerEngine === 'local'); if (w && localStt[src] == null) localStt[src] = spawnLocalStt(src, deviceName); }, 2500);
   });
-  ps.on('error', (e) => console.error('[CA-main] local STT ' + src + ' proc error', e && e.message));
+  // ENOENT and friends fire 'error', NOT 'exit' -- the respawn path below never saw them, so a failed
+  // start was invisible AND unretried. Clear the slot so the exit guard stays consistent, and tell the UI.
+  ps.on('error', (e) => {
+    if (localStt[src] === ps) localStt[src] = null;
+    sendEngineError(src, 'local transcription could not start (' + ((e && e.message) || 'unknown') + ')');
+  });
   return ps;
 }
 // null the reference BEFORE killing so the exit handler's guard sees it's intentional and won't respawn
@@ -938,15 +1017,17 @@ ipcMain.on('set-mic-name', (e, name) => { name = name || ''; if (name === curren
 function applyEngines() {
   console.log('[CA-main] engines  speaker=' + speakerEngine + '  mic=' + micEngine);
   readerPaused = false;
-  startReader();
-  micReaderPaused = (micEngine !== 'browser');
-  if (micReaderPaused) { try { if (micReader) micReader.kill(); } catch (err) {} } else startMicReader();
+  // The Live Captions reader is engine-independent (it also enforces LC opacity), so a mic-engine
+  // change must not restart it: every restart dropped captions for a second or more.
+  if (!reader) startReader();
+  micReaderPaused = !(micEngine === 'browser' || micEngine === 'windows');
+  if (micReaderPaused) { const old = micReader; micReader = null; try { if (old) old.kill(); } catch (err) {} } else startMicReader();
   reconcileLocalStt();
 }
 ipcMain.on('set-engines', (e, cfg) => {
   cfg = cfg || {};
   speakerEngine = ['system', 'local', 'deepgram', 'elevenlabs', 'speechmatics'].includes(cfg.speaker) ? cfg.speaker : 'system';
-  micEngine = ['browser', 'local', 'deepgram', 'elevenlabs', 'speechmatics'].includes(cfg.mic) ? cfg.mic : 'browser';
+  micEngine = ['windows', 'browser', 'local', 'deepgram', 'elevenlabs', 'speechmatics'].includes(cfg.mic) ? cfg.mic : 'windows';
   applyEngines();
 });
 // cloud MIC transcript from the renderer -> same teleprompter accumulation the WinRT reader uses

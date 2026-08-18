@@ -82,7 +82,7 @@ let speakerParas = [];      // Live Captions source (the interviewer / system au
 let micParas = [];          // microphone source (you) -- captured continuously so the view can switch
 let micOpen = false;        // is the current mic utterance still growing (a partial not yet finalised)?
 let viewMode = 'speaker';   // 'speaker' | 'mic' | 'both' -- which source(s) the caption window shows
-let speakerEngine = 'system', micEngine = 'browser';   // per-source STT backends, chosen independently in Settings
+let speakerEngine = 'system', micEngine = 'windows';   // per-source STT backends, chosen independently in Settings
 let speakerOpen = false;    // cloud speaker utterance still growing?
 let caLastChromeMic = 0;    // last time the extension fed a Chrome-speech mic caption (preferred over WinRT)
 const MAX_PARAS = 3000;      // cap retained paragraphs so long sessions stay responsive
@@ -1338,7 +1338,7 @@ let micTx = null, speakerTx = null, txKeys = null;
 function setEngineNote(t) { const n = $('engineNote'); if (n) n.textContent = t || ''; }
 function stopEngine() { if (micTx) { micTx.stop(); micTx = null; } if (speakerTx) { speakerTx.stop(); speakerTx = null; } }
 function isCloud(e) { return e === 'deepgram' || e === 'elevenlabs' || e === 'speechmatics'; }
-function engName(e) { return ({ system: 'System', browser: 'Browser', local: 'Local (Vosk)', deepgram: 'Deepgram', elevenlabs: 'ElevenLabs', speechmatics: 'Speechmatics' }[e] || e); }
+function engName(e) { return ({ system: 'System', windows: 'Windows speech', browser: 'Browser', local: 'Local (Vosk)', deepgram: 'Deepgram', elevenlabs: 'ElevenLabs', speechmatics: 'Speechmatics' }[e] || e); }
 function engineSummary() { return '🔊 ' + engName(speakerEngine) + '   ·   🎤 ' + engName(micEngine); }
 function onTxStatus(src, st, detail) {
   if (st === 'live') setEngineNote(engineSummary() + ' — live');
@@ -1404,7 +1404,7 @@ async function applyEngines() {
     speakerTx.start();
   }
 }
-try { speakerEngine = localStorage.getItem('ca_spk_engine') || 'system'; micEngine = localStorage.getItem('ca_mic_engine') || 'browser'; } catch (e) {}
+try { speakerEngine = localStorage.getItem('ca_spk_engine') || 'system'; micEngine = localStorage.getItem('ca_mic_engine') || 'windows'; } catch (e) {}
 if ($('speakerEngineSelect')) { $('speakerEngineSelect').value = speakerEngine; $('speakerEngineSelect').addEventListener('change', () => { speakerEngine = $('speakerEngineSelect').value; applyEngines(); }); }
 if ($('micEngineSelect')) { $('micEngineSelect').value = micEngine; $('micEngineSelect').addEventListener('change', () => { micEngine = $('micEngineSelect').value; applyEngines(); }); }
 // one-click local-model setup (installs torch + RealtimeSTT + faster-whisper)
@@ -1424,9 +1424,14 @@ if (window.cap.onBrowserMic) window.cap.onBrowserMic((s) => {
   const el = $('browserMicNote'); if (el) el.textContent = lbl ? ('🌐 ' + micLabel(lbl)) : '';   // drop the "Microphone (…)" wrapper
   const b = $('srcBtn'); if (b && lbl) b.title = b.title.split('  ·  ')[0] + '  ·  browser mic: ' + lbl;
 });
-// local GPU STT (Python) reports its status back through main
+// Engines that run outside the renderer (local Vosk, the WinRT Windows reader) report status through main.
+// This used to accept reports only while a 'local' engine was selected, so a broken Windows-speech mic
+// stayed completely silent in the UI. Gate on the engine for THAT source instead, which also drops stale
+// reports arriving from an engine the user has already switched away from.
 if (window.cap.onEngineStatus) window.cap.onEngineStatus((s) => {
-  if (speakerEngine !== 'local' && micEngine !== 'local') return;
+  if (!s) return;
+  const engForSrc = (s.src === 'mic') ? micEngine : speakerEngine;
+  if (s.engine && s.engine !== engForSrc) return;
   if (s.state === 'live') setEngineNote(engineSummary() + ' — live');
   else if (s.state === 'error') setEngineNote((s.src === 'mic' ? '🎤 ' : '🔊 ') + (s.detail || 'error'));
 });
@@ -1754,11 +1759,12 @@ $('exitCancel').addEventListener('click', hideOverlay);
 window.cap.onCaption((obj) => {
   if (screen !== 'live' || review || captureStopped) return;
   // Route by SOURCE against the per-source engine. mic captions arrive here from Chrome speech
-  // (from:'chrome'), the WinRT fallback, or local Vosk; cloud mic/speaker arrive via their own WebSockets
+  // (from:'chrome'), the WinRT reader ('windows', also the browser-mode fallback), or local Vosk; cloud
+  // mic/speaker arrive via their own WebSockets
   // (micTx/speakerTx), not here. The Live Captions reader runs in every mode (opacity) but its sourceless
   // text only counts as the SPEAKER source when speakerEngine is 'system'.
   if (obj.src === 'mic') {   // microphone source (you) -- captured continuously, shown in mic/both view
-    if (micEngine !== 'browser' && micEngine !== 'local') return;   // cloud mic comes via micTx
+    if (micEngine !== 'windows' && micEngine !== 'browser' && micEngine !== 'local') return;   // cloud mic comes via micTx
     if (obj.status === 'waiting' || obj.status === 'setup') return;
     if (micEngine === 'browser') {                                  // prefer Chrome speech over the WinRT fallback
       if (obj.from === 'chrome') caLastChromeMic = Date.now();

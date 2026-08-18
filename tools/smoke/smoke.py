@@ -1,0 +1,155 @@
+"""Caption assistance regression smoke test (drives the real app over CDP)."""
+import cdp, json, time, urllib.request, subprocess, sys
+
+TOK = 'captionassistance-bridge-7f3a'
+results = []
+def check(name, ok, detail=''):
+    results.append((name, ok, detail))
+    print(('  PASS  ' if ok else '  FAIL  ') + name + (('  -> ' + str(detail)[:120]) if detail else ''))
+
+def poll():
+    return json.loads(urllib.request.urlopen(
+        'http://127.0.0.1:17632/poll?token=%s&client=smoke' % TOK, timeout=5).read().decode())
+
+def procs(name):
+    out = subprocess.run(['tasklist'], capture_output=True, text=True).stdout.lower()
+    return out.count(name.lower())
+
+def stt_procs():
+    # Filter on the image name FIRST. Matching only on command line made the query match the
+    # PowerShell process running the query itself (its own command line contains the search string).
+    out = subprocess.run(['powershell', '-NoProfile', '-Command',
+        "(Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+        "Where-Object { $_.CommandLine -like '*stt-local*' } | Measure-Object).Count"],
+        capture_output=True, text=True, timeout=60).stdout.strip()
+    try:
+        return int(out.splitlines()[-1])
+    except Exception:
+        return -1
+
+def reader_procs():
+    # Build the match pattern by concatenation. Any literal pattern spelled out here also appears in this
+    # query's own command line, so PowerShell matched the querying process and always reported one extra.
+    out = subprocess.run(['powershell', '-NoProfile', '-Command',
+        "$pat = '*-File*caption-' + 'reader.ps1*';"
+        "(Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | "
+        "Where-Object { $_.CommandLine -like $pat } | Measure-Object).Count"],
+        capture_output=True, text=True, timeout=60).stdout.strip()
+    try:
+        return int(out.splitlines()[-1])
+    except Exception:
+        return -1
+
+def wait_for(fn, timeout=20, step=1.0):
+    # Poll until fn() is truthy. Fixed sleeps made this suite flaky: process teardown
+    # and Live Captions warm-up are both several seconds and highly variable.
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            if fn():
+                return True
+        except Exception:
+            pass
+        time.sleep(step)
+    return False
+
+c = cdp.connect()
+J = c.js
+
+print('\n== 1. startup / home ==')
+check('home screen visible', J("[...document.querySelectorAll('.screen')].filter(e=>!e.classList.contains('hidden')).map(e=>e.id).join(',')") == 'home')
+check('preload API exposed', J("Object.keys(window.cap||{}).length") >= 57)
+check('version rendered', 'v1.0.2' in (J("(document.getElementById('homeVer')||{}).textContent") or ''))
+check('bridge /ping', urllib.request.urlopen('http://127.0.0.1:17632/ping?token=%s' % TOK, timeout=5).read().decode().find('"ok":true') > 0)
+
+print('\n== 2. engine list (Phase 3) ==')
+opts = J("[...document.querySelectorAll('#micEngineSelect option')].map(o=>o.value).join(',')")
+check('windows option first', opts.startswith('windows'), opts)
+labels = J("[...document.querySelectorAll('#micEngineSelect option,#speakerEngineSelect option')].filter(o=>/API key/.test(o.textContent)).length")
+check('cloud engines marked "API key"', labels == 6, labels)
+
+print('\n== 3. mic engine switching ==')
+J("(function(){var s=document.getElementById('micEngineSelect');s.value='windows';s.dispatchEvent(new Event('change',{bubbles:true}));})()")
+time.sleep(4)
+check('bridge reports windows/app', poll().get('engine') == 'windows' and poll().get('micSource') == 'app')
+check('mic-reader.exe running', procs('mic-reader') >= 1)
+note = J("(document.getElementById('engineNote')||{}).textContent") or ''
+check('engine error surfaced in UI (B1 class)', ('blocked by an OS setting' in note) or ('Windows speech' in note), note[:80])
+
+J("(function(){var s=document.getElementById('micEngineSelect');s.value='local';s.dispatchEvent(new Event('change',{bubbles:true}));})()")
+check('local engine stops mic-reader', wait_for(lambda: procs('mic-reader') == 0, 20))
+check('local STT process spawned (cwd fix)', wait_for(lambda: stt_procs() >= 1, 20))
+
+J("(function(){var s=document.getElementById('micEngineSelect');s.value='windows';s.dispatchEvent(new Event('change',{bubbles:true}));})()")
+check('switch back to windows', wait_for(lambda: procs('mic-reader') >= 1 and stt_procs() == 0, 30))
+# Engine switches used to kill the Live Captions reader, whose exit handler then scheduled its own
+# restart -- leaving two readers fighting over the same window and dropping captions.
+check('exactly one caption reader', wait_for(lambda: reader_procs() == 1, 15), reader_procs())
+
+print('\n== 4. live session ==')
+J("document.getElementById('startNew').click()"); time.sleep(0.7)
+J("document.getElementById('startSession').click()"); time.sleep(0.8)
+check('permission modal', J("!document.getElementById('mPerm').classList.contains('hidden')"))
+J("document.getElementById('permOk').click()"); time.sleep(4)
+check('live screen', J("[...document.querySelectorAll('.screen')].filter(e=>!e.classList.contains('hidden')).map(e=>e.id).join(',')") == 'live')
+check('recording started', J("(typeof caRec!=='undefined'&&caRec&&caRec.mr)?caRec.mr.state:'n/a'") == 'recording')
+
+print("")
+print("== 5. speaker caption end-to-end (TTS -> Live Captions -> app) ==")
+
+def lc_ready():
+    ts = J("(document.getElementById('ts')||{}).textContent") or ''
+    ph = J("(document.getElementById('caption')||{}).textContent") or ''
+    return 'setup' not in ts.lower() and 'Preparing speech model' not in ph
+
+check('Live Captions out of setup', wait_for(lc_ready, 60, 2))
+
+def say(t):
+    subprocess.run(['powershell', '-NoProfile', '-Command',
+        "Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer;"
+        "$s.SetOutputToDefaultAudioDevice(); $s.Speak('" + t + "'); $s.Dispose()"],
+        capture_output=True, timeout=120)
+
+def spk_text():
+    return (J("(typeof speakerParas!=='undefined'?speakerParas:[]).map(p=>p.text).join(' ')") or '')
+
+def heard():
+    return 'scaling' in spk_text().lower()
+
+say('Tell me about a scaling problem you solved.')
+ok = wait_for(heard, 20, 2)
+if not ok:
+    say('Tell me about a scaling problem you solved.')   # LC often misses the very first utterance after start
+    ok = wait_for(heard, 25, 2)
+check('speaker transcript captured', ok, spk_text()[:90])
+
+print('\n== 6. selection + till-end visual state (B2) ==')
+J("document.getElementById('latestBtn').click()"); time.sleep(0.5)
+sel = J("window.__captionSelText?window.__captionSelText():''") or ''
+check('Latest selects a sentence', len(sel.strip()) > 3, sel[:60])
+off1 = J("(function(){var b=document.getElementById('toEndBtn'),s=getComputedStyle(b);return s.backgroundColor+'|'+s.boxShadow})()")
+J("document.getElementById('toEndBtn').click()"); time.sleep(0.4)
+on = J("(function(){var b=document.getElementById('toEndBtn'),s=getComputedStyle(b);return s.backgroundColor+'|'+s.boxShadow})()")
+J("document.getElementById('toEndBtn').click()"); time.sleep(0.3)
+check('till-end ON differs from OFF', on != off1, 'off=%s on=%s' % (off1[:32], on[:32]))
+
+print('\n== 7. guards ==')
+J("window.getSelection().removeAllRanges()"); time.sleep(0.2)
+J("document.getElementById('gptBtn').click()"); time.sleep(0.7)
+check('no-selection guard', 'Select a question first' in (J("(document.getElementById('actionNotice')||{}).textContent") or ''))
+
+print('\n== 8. session save / delete ==')
+J("document.getElementById('endBtn').click()"); time.sleep(0.9)
+J("document.getElementById('sessName').value='SMOKE TEST'")
+J("document.getElementById('doneSave').click()"); time.sleep(3.5)
+sess = json.loads(J("localStorage.getItem('ce_sessions')||'[]'"))
+check('session saved with transcript', len(sess) == 1 and len(sess[0].get('text','')) > 0, str(sess)[:90])
+J("(document.querySelector('#recentList .del')||document.querySelector('#recentList button')).click()"); time.sleep(0.8)
+J("document.getElementById('savedDeleteOk').click()"); time.sleep(1.5)
+check('session deleted', json.loads(J("localStorage.getItem('ce_sessions')||'[]'")) == [])
+
+c.close()
+bad = [r for r in results if not r[1]]
+print('\n================ %d/%d PASS ================' % (len(results)-len(bad), len(results)))
+for n,_,d in bad: print('  FAILED:', n, '->', d)
+sys.exit(1 if bad else 0)
