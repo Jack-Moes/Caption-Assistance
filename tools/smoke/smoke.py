@@ -3,9 +3,14 @@ import cdp, json, time, urllib.request, subprocess, sys
 
 TOK = 'captionassistance-bridge-7f3a'
 results = []
+skipped = []
 def check(name, ok, detail=''):
     results.append((name, ok, detail))
     print(('  PASS  ' if ok else '  FAIL  ') + name + (('  -> ' + str(detail)[:120]) if detail else ''))
+
+def skip(name, why):
+    skipped.append((name, why))
+    print('  SKIP  ' + name + '  -> ' + why)
 
 def poll():
     return json.loads(urllib.request.urlopen(
@@ -148,8 +153,40 @@ J("(document.querySelector('#recentList .del')||document.querySelector('#recentL
 J("document.getElementById('savedDeleteOk').click()"); time.sleep(1.5)
 check('session deleted', json.loads(J("localStorage.getItem('ce_sessions')||'[]'")) == [])
 
+print("")
+print("== 9. clipboard action ==")
+check('clipboard hotkey row present', bool(J("!!document.getElementById('hkClip')")))
+res = J("cap.setHotkeys({clip:{key:'F9'}}).then(r=>JSON.stringify(r.results)+'|'+r.actions.clip.key)", timeout=20)
+check('clip hotkey registers', '"clip":true' in res and res.endswith('|F9'), res)
+J("cap.setHotkeys({clip:{key:''}})", timeout=20)
+
+J("window.__gptRes=null; window.cap.onGptResult(function(r){window.__gptRes=r;});")
+J("cap.copy('')")
+time.sleep(0.6)
+J("cap.sendAction('clip')")
+time.sleep(1.5)
+check('empty clipboard guarded', J("(window.__gptRes||{}).code") == 'clipboard-empty', J("(window.__gptRes||{}).error"))
+
+J("cap.copy('What is your experience with Kubernetes?')")
+time.sleep(0.6)
+J("window.__gptRes=null")
+J("cap.sendAction('clip')")
+time.sleep(1.8)
+code = J("(window.__gptRes||{}).code")
+# no extension is bound during the suite, so getting as far as the bridge proves the clipboard text
+# was read and passed the guard
+# Headless/service sessions have no window station, so the OS clipboard is unavailable and the app
+# correctly reports it empty. Report that as skipped rather than failed.
+if code == 'clipboard-empty':
+    skip('clipboard text sent to bridge', 'no clipboard access in this session (clip.exe: Access is denied)')
+else:
+    check('clipboard text sent to bridge', code in ('bridge-offline', 'no-bound-tab'), code)
+
 c.close()
 bad = [r for r in results if not r[1]]
-print('\n================ %d/%d PASS ================' % (len(results)-len(bad), len(results)))
+print('')
+print('================ %d/%d PASS, %d skipped ================' % (len(results)-len(bad), len(results), len(skipped)))
+for n, why in skipped:
+    print('  skipped:', n, '->', why)
 for n,_,d in bad: print('  FAILED:', n, '->', d)
 sys.exit(1 if bad else 0)

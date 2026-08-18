@@ -470,7 +470,8 @@ let actions = {
   simple:  { key: '', label: 'ss' },   // sends the "ss" keyword + context; the primed session's [ss] mode = a simple 3-4 sentence answer
   latest:  { key: '' },                // select the latest transcript sentence in the app; never sends it
   compact: { key: '', url: '' },  // open a fresh ChatGPT window at this URL + move the history there
-  micmute: { key: '' }              // toggle system mic mute (handled in the renderer so it uses the chosen device)
+  micmute: { key: '' },             // toggle system mic mute (handled in the renderer so it uses the chosen device)
+  clip:    { key: '' }              // send whatever is on the clipboard (a pasted problem statement, a chat message)
 };
 async function sendAction(id, suppliedSelection) {
   console.log('[CA-main] sendAction:', id);
@@ -482,6 +483,17 @@ async function sendAction(id, suppliedSelection) {
     }
     enqueueCommand({ type: 'compact', url: (actions.compact.url || ''), ts: Date.now() });
     if (win && !win.isDestroyed()) { win.webContents.send('gpt-status', { connected: extConnected(), justSent: true, action: 'compact' }); win.webContents.send('advance-selection', 'compact'); }
+    return;
+  }
+  if (id === 'clip') {
+    // Not every question is spoken: coding problems and chat messages are read off the screen. The
+    // clipboard is the cheapest way in, and it needs no selection in the transcript.
+    const clipText = (clipboard.readText() || '').trim();
+    if (!clipText) {
+      emitGptResult({ ok: false, error: 'The clipboard is empty - copy the question or problem statement first.', code: 'clipboard-empty', returnToApp: false, actionId: 'clip' });
+      return;
+    }
+    doSendChatGPT(clipText, 'clip', true);
     return;
   }
   let text = '', submit = true;
@@ -569,6 +581,7 @@ function registerHotkeys() {
   }
   // Available in every interview mode. In Live Coding, F1-F5 remain reserved and a
   // conflicting Latest binding is visibly marked as unavailable in Settings.
+  results.clip = reg(actions.clip.key, () => sendAction('clip'));
   results.latest = reg(actions.latest.key, () => { if (win && !win.isDestroyed()) win.webContents.send('hotkey-latest'); });
   results.micmute = reg(actions.micmute.key, () => { if (win && !win.isDestroyed()) win.webContents.send('hotkey-mute'); });
   console.log('[CA-main] registered hotkeys (coding=' + codingMode + ') -> ok:', JSON.stringify(results));
@@ -585,6 +598,7 @@ ipcMain.handle('set-hotkeys', (e, cfg) => {
   if (cfg.latest && typeof cfg.latest.key === 'string') actions.latest.key = cfg.latest.key;
   if (cfg.compact) { if (typeof cfg.compact.key === 'string') actions.compact.key = cfg.compact.key; if (typeof cfg.compact.url === 'string') actions.compact.url = cfg.compact.url; }
   if (cfg.micmute && typeof cfg.micmute.key === 'string') actions.micmute.key = cfg.micmute.key;
+  if (cfg.clip && typeof cfg.clip.key === 'string') actions.clip.key = cfg.clip.key;
   const results = registerHotkeys();
   return { ok: true, results: results, actions: actions };
 });
