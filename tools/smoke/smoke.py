@@ -2,6 +2,21 @@
 import cdp, io, json, time, urllib.request, subprocess, sys
 
 TOK = 'captionassistance-bridge-7f3a'
+PORTS = [17632, 17633, 17634, 17635, 17636]
+
+def discover_base():
+    # The app falls back through this range when its preferred port is taken, so the suite must not
+    # assume 17632 either.
+    for p in PORTS:
+        try:
+            d = json.loads(urllib.request.urlopen('http://127.0.0.1:%d/ping?token=%s' % (p, TOK), timeout=3).read().decode())
+            if d.get('app') == 'caption.assistance':
+                return 'http://127.0.0.1:%d' % p, d
+        except Exception:
+            pass
+    return None, None
+
+BASE, PING = discover_base()
 results = []
 skipped = []
 def check(name, ok, detail=''):
@@ -14,7 +29,7 @@ def skip(name, why):
 
 def poll():
     return json.loads(urllib.request.urlopen(
-        'http://127.0.0.1:17632/poll?token=%s&client=smoke' % TOK, timeout=5).read().decode())
+        BASE + '/poll?token=%s&client=smoke' % TOK, timeout=5).read().decode())
 
 def procs(name):
     out = subprocess.run(['tasklist'], capture_output=True, text=True).stdout.lower()
@@ -58,6 +73,9 @@ def wait_for(fn, timeout=20, step=1.0):
         time.sleep(step)
     return False
 
+if not BASE:
+    print('no Caption assistance bridge found on ports %s - is the app running?' % PORTS)
+    sys.exit(1)
 c = cdp.connect()
 J = c.js
 
@@ -65,7 +83,8 @@ print('\n== 1. startup / home ==')
 check('home screen visible', J("[...document.querySelectorAll('.screen')].filter(e=>!e.classList.contains('hidden')).map(e=>e.id).join(',')") == 'home')
 check('preload API exposed', J("Object.keys(window.cap||{}).length") >= 57)
 check('version rendered', 'v1.0.2' in (J("(document.getElementById('homeVer')||{}).textContent") or ''))
-check('bridge /ping', urllib.request.urlopen('http://127.0.0.1:17632/ping?token=%s' % TOK, timeout=5).read().decode().find('"ok":true') > 0)
+check('bridge reachable on a fallback-range port', bool(BASE), BASE)
+check('ping reports its own port', PING and PING.get('port') in PORTS, PING)
 
 print('\n== 2. engine list (Phase 3) ==')
 opts = J("[...document.querySelectorAll('#micEngineSelect option')].map(o=>o.value).join(',')")
@@ -273,7 +292,7 @@ check('selfCheck reports NOT ok once the page has no composer', '"ok":false' in 
 
 # app side: a broken adapter must reach the UI rather than fail silently on the next send
 def post_ext(payload):
-    req = urllib.request.Request('http://127.0.0.1:17632/from-ext?token=' + TOK,
+    req = urllib.request.Request(BASE + '/from-ext?token=' + TOK,
                                  data=json.dumps(payload).encode(),
                                  headers={'Content-Type': 'application/json'}, method='POST')
     urllib.request.urlopen(req, timeout=5).read()

@@ -2,9 +2,31 @@
 // Long-polls the Caption assistance local server for commands and runs them against the
 // ChatGPT tab: 'send' types text + submits; 'compact' scrapes the current chat,
 // opens a fresh window at a chosen URL, and pastes the history there.
-const PORT = 17632;
+// The app walks this same list when its preferred port is taken, so probe rather than assume.
+const PORTS = [17632, 17633, 17634, 17635, 17636];
 const TOKEN = 'captionassistance-bridge-7f3a';           // must match main.js BRIDGE_TOKEN
-const BASE = `http://127.0.0.1:${PORT}`;
+let BASE = `http://127.0.0.1:${PORTS[0]}`;
+let discovering = null;
+async function discoverBase() {
+  if (discovering) return discovering;
+  discovering = (async () => {
+    for (const p of PORTS) {
+      const base = `http://127.0.0.1:${p}`;
+      try {
+        const r = await fetch(`${base}/ping?token=${TOKEN}`, { method: 'GET', cache: 'no-store' });
+        if (!r.ok) continue;
+        const d = await r.json();
+        if (d && d.app === 'caption.assistance') {
+          if (BASE !== base) log('bridge found on port', p);
+          BASE = base;
+          return true;
+        }
+      } catch (e) {}
+    }
+    return false;
+  })().finally(() => { discovering = null; });
+  return discovering;
+}
 function postToBridge(payload) {
   try { return fetch(`${BASE}/from-ext?token=${TOKEN}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), cache: 'no-store' }).catch(() => null); }
   catch (e) { return Promise.resolve(null); }
@@ -76,6 +98,7 @@ async function commandWaitLoop() {
       for (const cmd of cmds) await dispatchCommand(cmd);
     } catch (e) {
       connectedOnce = false;
+      await discoverBase();   // the app may have started on a different port
       await sleep(800);
     }
   }
@@ -102,7 +125,7 @@ async function doPoll() {
     if (!r.ok) { connectedOnce = false; return; }
     data = await r.json();
     if (!connectedOnce) { connectedOnce = true; log('CONNECTED to Caption assistance ✓'); }
-  } catch (e) { connectedOnce = false; return; }
+  } catch (e) { connectedOnce = false; discoverBase(); return; }
   finally { pollInFlight = false; }
   // keep the binding consistent with the server: re-register if it forgot (app restarted);
   // release ours if another browser has taken over.

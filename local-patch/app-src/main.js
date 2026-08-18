@@ -604,7 +604,11 @@ ipcMain.handle('set-hotkeys', (e, cfg) => {
 });
 
 // ---------- Chrome-extension bridge (localhost HTTP long-poll) ----------
-const BRIDGE_PORT = 17632;
+// The bridge used to bind one hard-coded port and, if anything already held it, log a line and stay
+// silently dead -- the extension then looked 'not connected' with nothing explaining why. Try a short
+// range instead; the extension probes the same list.
+const BRIDGE_PORTS = [17632, 17633, 17634, 17635, 17636];
+let bridgePort = 0;
 const BRIDGE_TOKEN = 'captionassistance-bridge-7f3a';   // shared secret; must match the extension
 let bridgeServer = null;
 let extLastSeen = 0;
@@ -737,11 +741,21 @@ function startBridge() {
         req.on('end', () => { let o = {}; try { o = JSON.parse(body || '{}'); } catch (e) {} handleFromExt(o); bridgeSend(res, 200, { ok: true }); });
         return;
       }
-      if (u.pathname === '/ping') { bridgeSend(res, 200, { ok: true, app: 'caption.assistance', boundClient: boundClient }); return; }
+      if (u.pathname === '/ping') { bridgeSend(res, 200, { ok: true, app: 'caption.assistance', port: bridgePort, boundClient: boundClient }); return; }
       bridgeSend(res, 404, { error: 'not found' });
     });
-    bridgeServer.on('error', (err) => { try { console.error('bridge:', err && err.message); } catch (e) {} });
-    bridgeServer.listen(BRIDGE_PORT, '127.0.0.1');
+    let portIndex = 0;
+    bridgeServer.on('error', (err) => {
+      if (err && err.code === 'EADDRINUSE' && portIndex + 1 < BRIDGE_PORTS.length) {
+        portIndex++;
+        console.warn('[CA-main] bridge port ' + BRIDGE_PORTS[portIndex - 1] + ' in use -> trying ' + BRIDGE_PORTS[portIndex]);
+        try { bridgeServer.listen(BRIDGE_PORTS[portIndex], '127.0.0.1'); } catch (e) {}
+        return;
+      }
+      try { console.error('bridge:', err && err.message); } catch (e) {}
+    });
+    bridgeServer.on('listening', () => { bridgePort = BRIDGE_PORTS[portIndex]; console.log('[CA-main] bridge listening on 127.0.0.1:' + bridgePort); });
+    bridgeServer.listen(BRIDGE_PORTS[portIndex], '127.0.0.1');
   } catch (e) {}
 }
 function stopBridge() {

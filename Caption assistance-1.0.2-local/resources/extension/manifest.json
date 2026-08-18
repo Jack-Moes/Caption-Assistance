@@ -1,11 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Caption assistance Bridge",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Sends Caption assistance selections to a bound ChatGPT tab and can stream the answer back to the app.",
   "permissions": ["tabs", "scripting", "alarms", "storage"],
   "host_permissions": [
     "http://127.0.0.1:17632/*",
+    "http://127.0.0.1:17633/*",
+    "http://127.0.0.1:17634/*",
+    "http://127.0.0.1:17635/*",
+    "http://127.0.0.1:17636/*",
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
     "https://aistudio.google.com/*",
