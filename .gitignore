@@ -8,3 +8,7 @@ Caption assistance-1.0.2-local/resources/app.asar.pending
 
 # API keys, if ever placed next to the app instead of userData
 *-key.txt
+
+# Python bytecode from tools/
+__pycache__/
+*.pyc
