@@ -583,7 +583,9 @@ function show(name) {
   for (const s of ['home', 'new', 'live', 'prompts']) $(s).classList.toggle('hidden', s !== name);
   document.querySelectorAll('.side[data-nav]').forEach((b) => b.classList.toggle('active', b.dataset.nav === name));
   // Caption.Ed sizing rule: compact 640x440 caption window, 1024x700 setup window
-  window.cap.resize(name === 'live' ? 640 : 1024, name === 'live' ? 440 : 700);
+  // 1.3x the old sizes. At 640x440 the live window left the answer panel about 320px wide, which is
+  // not enough for its own header: the title, the status and five controls collided.
+  window.cap.resize(name === 'live' ? 832 : 1330, name === 'live' ? 572 : 910);
   if (name === 'home') renderRecent();
   if (name === 'prompts') loadPrompts();
   if (typeof startMicMeter === 'function') { if (name === 'live') startMicMeter(); else stopMicMeter(); }   // pulse only during a session
@@ -594,7 +596,6 @@ function showOverlay(which) {
   $('mDone').classList.toggle('hidden', which !== 'done');
   $('mExit').classList.toggle('hidden', which !== 'exit');
   $('mSavedDelete').classList.toggle('hidden', which !== 'savedDelete');
-  $('mHelp').classList.toggle('hidden', which !== 'help');
 }
 function hideOverlay() { $('overlay').classList.add('hidden'); }
 
@@ -748,6 +749,7 @@ let hotCfg = {
   send:    { key: '' },              // hotkeys start UNBOUND -- the user assigns them (click the box, press a key)
   aa:      { key: '', label: 'aa' },
   bb:      { key: '', text: 'zz' },
+  simple:  { key: '' },
   latest:  { key: '' },
   compact: { key: '', url: '' },
   micmute: { key: '' },
@@ -826,6 +828,7 @@ function applyHotUI() {
   if ($('hkLatest')) $('hkLatest').textContent = (hotCfg.latest && hotCfg.latest.key) || '—';
   $('hkCompact').textContent = hotCfg.compact.key || '—';
   if ($('hkMic')) $('hkMic').textContent = (hotCfg.micmute && hotCfg.micmute.key) || '—';
+  if ($('hkSimple')) $('hkSimple').textContent = (hotCfg.simple && hotCfg.simple.key) || '—';
   if ($('hkClip')) $('hkClip').textContent = (hotCfg.clip && hotCfg.clip.key) || '—';
   if ($('hkOcr')) $('hkOcr').textContent = (hotCfg.ocr && hotCfg.ocr.key) || '—';
   if ($('hkPrivacyClick')) $('hkPrivacyClick').textContent = displayAccel(privacyCfg.clickHotkey);
@@ -852,7 +855,7 @@ function syncHot() {
   hotCfg.compact.url = ($('kwCompactUrl').value || '').trim();
   try { localStorage.setItem('ce_hotcfg', JSON.stringify(hotCfg)); } catch (e) {}
   window.cap.setHotkeys(hotCfg).then((r) => {
-    if (r && r.results) { markHk('hkSend', r.results.send); markHk('hkAa', r.results.aa); markHk('hkBb', r.results.bb); markHk('hkLatest', r.results.latest); markHk('hkCompact', r.results.compact); markHk('hkMic', r.results.micmute); markHk('hkClip', r.results.clip); markHk('hkOcr', r.results.ocr); }
+    if (r && r.results) { markHk('hkSend', r.results.send); markHk('hkAa', r.results.aa); markHk('hkBb', r.results.bb); markHk('hkLatest', r.results.latest); markHk('hkCompact', r.results.compact); markHk('hkMic', r.results.micmute); markHk('hkClip', r.results.clip); markHk('hkOcr', r.results.ocr); markHk('hkSimple', r.results.simple); }
   }).catch(() => {});
 }
 // rebind a hotkey: click its box, then press the new key
@@ -1044,7 +1047,10 @@ function resetAnswerLayout() {
 function applyAnswerFont() {
   const out = $('gptAnswerText');
   if (out) out.style.fontSize = answerFontPx + 'px';
-  const l = $('ansFontVal'); if (l) l.textContent = answerFontPx + 'px';
+  // The current size lives in the button tooltips rather than its own label: the header row has no
+  // spare width at the default window size, and a readout was the least useful thing competing for it.
+  const d = $('ansFontDown'); if (d) d.title = 'Smaller answer text (now ' + answerFontPx + 'px)';
+  const u = $('ansFontUp'); if (u) u.title = 'Larger answer text (now ' + answerFontPx + 'px)';
   try { localStorage.setItem('ca_ans_font', String(answerFontPx)); } catch (e) {}
 }
 function renderAnswer(full, isFinal) {
@@ -1430,7 +1436,7 @@ function applyMicState() {
   if (b) { b.classList.toggle('mic-muted', micMuted); b.title = micMuted ? ('MUTED (' + which + ') — click to unmute') : ('Mute ' + which + ' system-wide (stops it reaching every app, incl. meetings)'); }
   if (u) u.setAttribute('href', micMuted ? '#i-mic-off' : '#i-mic');
 }
-function micSelects() { return [$('micSelect'), $('micSelect2'), $('micSelect0')].filter(Boolean); }
+function micSelects() { return [$('micSelect'), $('micSelect0')].filter(Boolean); }
 function fillMicSelects(devs) {
   micSelects().forEach((sel) => {
     sel.innerHTML = '';
@@ -1487,12 +1493,10 @@ refreshMics();   // populate selectors + reflect current mute state
 let scrollOn = true;
 function applyScrollState() {
   const b = $('scrollBtn'); if (b) { b.classList.toggle('scroll-on', scrollOn); b.title = scrollOn ? 'GPT auto scroll: ON — click to turn off' : 'GPT auto scroll: off — read-along scroll'; }
-  const t = $('micInspectorToggle'); if (t) t.checked = scrollOn;
   window.cap.setTeleprompter(scrollOn);
 }
 function setScrollOn(v) { scrollOn = !!v; applyScrollState(); }
 if ($('scrollBtn')) $('scrollBtn').addEventListener('click', () => setScrollOn(!scrollOn));
-if ($('micInspectorToggle')) $('micInspectorToggle').addEventListener('change', () => setScrollOn($('micInspectorToggle').checked));
 applyScrollState();
 
 // Read-along test console (on the ChatGPT tab) — off by default; toggled from Settings

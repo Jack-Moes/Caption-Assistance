@@ -213,8 +213,8 @@ function revealMain() {
 function createWindow() {
   createSplash();   // show instant feedback first
   win = new BrowserWindow({
-    width: 1024,
-    height: 700,
+    width: 1330,
+    height: 910,
     minWidth: 480,
     minHeight: 320,
     icon: path.join(__dirname, 'images', 'icon.png'),
@@ -753,6 +753,7 @@ function registerHotkeys() {
     results.send = reg(actions.send.key, () => sendAction('send'));
     results.aa = reg(actions.aa.key, () => sendAction('aa'));
     results.bb = reg(actions.bb.key, () => sendAction('bb'));
+    results.simple = reg(actions.simple.key, () => sendAction('simple'));
     results.compact = reg(actions.compact.key, () => sendAction('compact'));
   }
   // Available in every interview mode. In Live Coding, F1-F5 remain reserved and a
@@ -772,6 +773,7 @@ ipcMain.handle('set-hotkeys', (e, cfg) => {
   if (cfg.send && typeof cfg.send.key === 'string') actions.send.key = cfg.send.key;
   if (cfg.aa)      { if (typeof cfg.aa.key === 'string') actions.aa.key = cfg.aa.key; if (typeof cfg.aa.label === 'string') actions.aa.label = cfg.aa.label; }
   if (cfg.bb)      { if (typeof cfg.bb.key === 'string') actions.bb.key = cfg.bb.key; if (typeof cfg.bb.text === 'string') actions.bb.text = cfg.bb.text; }
+  if (cfg.simple && typeof cfg.simple.key === 'string') actions.simple.key = cfg.simple.key;
   if (cfg.latest && typeof cfg.latest.key === 'string') actions.latest.key = cfg.latest.key;
   if (cfg.compact) { if (typeof cfg.compact.key === 'string') actions.compact.key = cfg.compact.key; if (typeof cfg.compact.url === 'string') actions.compact.url = cfg.compact.url; }
   if (cfg.micmute && typeof cfg.micmute.key === 'string') actions.micmute.key = cfg.micmute.key;
@@ -1006,36 +1008,6 @@ ipcMain.handle('mic-mute', async (e, state, device) => {
     } catch (ex) { console.error('[mic-mute] fallback threw:', String(ex)); resolve({ ok: false, error: String(ex) }); }
   });
 });
-// ---- Mic caption inspector: a child window (mic-test/index.html) driven by mic-reader.exe ----
-let inspectorWin = null, inspectorMic = null;
-function startInspectorMic() {
-  try { inspectorMic = spawn(scriptPath('mic-reader.exe'), [String(process.pid)], { windowsHide: true }); }
-  catch (e) { return; }
-  let buf = '';
-  inspectorMic.stdout.on('data', (d) => {
-    buf += d.toString(); let i;
-    while ((i = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
-      if (!line) continue;
-      try { const o = JSON.parse(line); if (inspectorWin && !inspectorWin.isDestroyed()) inspectorWin.webContents.send('mic', o); } catch (e) {}
-    }
-  });
-  inspectorMic.on('exit', () => { if (inspectorWin && !inspectorWin.isDestroyed()) setTimeout(startInspectorMic, 800); });   // restart the lane
-}
-function stopInspectorMic() { try { if (inspectorMic) inspectorMic.kill(); } catch (e) {} inspectorMic = null; }
-function openInspector() {
-  if (inspectorWin && !inspectorWin.isDestroyed()) { inspectorWin.focus(); return; }
-  inspectorWin = new BrowserWindow({
-    width: 1180, height: 800, backgroundColor: '#0f1720', title: 'Mic Read-Along Inspector',
-    webPreferences: { preload: path.join(__dirname, 'mic-test', 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false }
-  });
-  inspectorWin.setMenuBarVisibility(false);
-  inspectorWin.loadFile(path.join(__dirname, 'mic-test', 'index.html'));
-  inspectorWin.on('closed', () => { inspectorWin = null; stopInspectorMic(); if (win && !win.isDestroyed()) win.webContents.send('inspector-closed'); });
-  startInspectorMic();
-}
-function closeInspector() { if (inspectorWin && !inspectorWin.isDestroyed()) inspectorWin.close(); }
-ipcMain.on('toggle-inspector', (e, on) => { if (on) openInspector(); else closeInspector(); });
 
 // ---- Microphone source: ONE WinRT recognizer feeds BOTH (1) the live 'mic' caption source shown in
 // the caption window, AND (2) the clean teleprompter accumulation (when GPT auto scroll is on). Runs

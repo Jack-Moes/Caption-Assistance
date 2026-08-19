@@ -124,7 +124,7 @@ body.dark .mic-select option, body.dark .set-mic option { background: #1a252f; c
 .ans-hist { display: inline-flex; align-items: center; gap: 4px; }
 .ans-hist.hidden { display: none; }
 .answer-copy:disabled { opacity: .35; cursor: default; }
-.answer-font { min-width: 30px; justify-content: center; font-weight: 700; }
+.answer-font { min-width: 26px; padding: 0 5px; justify-content: center; font-weight: 700; }
 .answer-font-val { font-size: 10px; opacity: .5; min-width: 30px; text-align: center; align-self: center; }
 body.dark .ans-lead { color: #eaf2ff; }
 body.dark .ans-tail { color: #9fd0ff; border-top-color: #2b3b60; }
@@ -376,10 +376,14 @@ body.dark .hk.taken { background: #3a1f22; color: #ff9a9a; border-color: #5c2c2c
 .caption-wrap { flex: 1; min-height: 0; display: flex; align-items: stretch; }
 .caption-wrap .caption { flex: 1; }
 .gpt-answer-view { flex:0 0 50%; min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; border-left:1px solid #2b3b60; background:#0a1020; }
-.gpt-answer-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 11px; border-bottom:1px solid #2b3b60; background:#080d1b; color:#f2f6ff; font-size:12px; }
-.gpt-answer-head > div { display:flex; align-items:center; gap:9px; min-width:0; }
-.gpt-answer-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
-.gpt-answer-status { color:#8ea2bf; font-size:9.5px; font-weight:600; white-space:nowrap; }
+/* This row has a title, a status and five controls in a panel that is ~330px wide at the default
+   window size, so nothing here may refuse to shrink: the title truncates, the status truncates, and
+   the controls drop to a second line rather than overlapping the title. */
+.gpt-answer-head { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; padding:8px 11px; border-bottom:1px solid #2b3b60; background:#080d1b; color:#f2f6ff; font-size:12px; }
+.gpt-answer-head > div { display:flex; align-items:center; gap:8px; min-width:0; flex:1 1 auto; overflow:hidden; }
+.gpt-answer-head > div > b { white-space:nowrap; }
+.gpt-answer-actions { display:flex; align-items:center; justify-content:flex-end; gap:5px; flex:0 0 auto; flex-wrap:wrap; }
+.gpt-answer-status { color:#8ea2bf; font-size:9.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 .gpt-answer-status.waiting { color:#ffd166; }
 .gpt-answer-status.done { color:#62dcff; }
 .gpt-answer-status.error { color:#ff8290; }

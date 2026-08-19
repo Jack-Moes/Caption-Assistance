@@ -1,6 +1,6 @@
 # Caption assistance — Easy User Guide (English)
 
-Version 1.2.0 · Haru Mikage · Japan · 2026.8.19
+Version 1.2.1 · Haru Mikage · Japan · 2026.8.19
 
 ## 1. What is this program?
 
@@ -359,9 +359,31 @@ Speaker and microphone can use separate engines.
 The three free options need no account. Cloud engines are marked **API key** in the dropdown.
 
 **Windows speech needs one OS setting.** Open Windows **Settings > Privacy & security > Speech** and turn
-on **Online speech recognition**. Until you do, Windows blocks all speech recognition and the app will
-say so in the engine line under the dropdowns. If your mic still does not work there, switch the Mic
-engine to **Browser**.
+on **Online speech recognition**. Windows never asks for this by itself - it simply refuses - so the app
+tells you instead: a notice appears on screen and an **Open Windows speech settings** button takes you
+straight to that page. If your mic still does not work there, switch the Mic engine to **Browser**.
+
+The line under the dropdowns is how you check the engine at a glance:
+
+| Line | Meaning |
+|---|---|
+| `System · Windows speech — live` | The engine is armed and listening |
+| `System · Windows speech` (no "live") | Selected, but not confirmed working yet |
+| A message in red-ish text | It failed, and the text says why |
+
+### Which microphone actually gets transcribed
+
+**Windows speech** and **Browser** both capture whatever Windows calls the default recording device -
+neither can be pointed at a device directly. So when you pick a microphone in this app, the app **changes
+the Windows default recording device to match**. That is a system-wide change: other apps will use the
+same microphone afterwards.
+
+This matters on a machine with more than one input. A capture card or webcam often registers as a
+microphone, and if that is the default you get a level meter that moves and a transcript that stays
+empty. Pick the microphone you are actually speaking into and the app points the engine at it.
+
+**Local (Vosk)** and the cloud engines are given the device directly and do not touch the Windows
+default.
 
 Click **Set up local model (one-time)** when Local asks for setup. For a cloud engine, enter and save the provider API key.
 
@@ -374,6 +396,7 @@ Important privacy distinction: Caption assistance has no external deployment-ver
 - Press Esc to cancel the change.
 - Fresh installations leave Standard-mode Send, `aa`, `zz`, Compact, and Mute hotkeys unassigned (`—`).
 - **Latest sentence** can also be assigned a global hotkey. It selects the newest transcript sentence without sending it.
+- **ss** (simple answer) can now be bound like `aa` and `zz`.
 - **Send clipboard** and **Read screen (OCR)** are hotkey-only actions; they have no toolbar button.
 - Edit the `aa` and `zz` fields to change those command words.
 - Set a **Compact** URL to open a specific GPT/custom GPT; leave it blank for a new normal chat.
@@ -497,14 +520,20 @@ Open the ChatGPT tab you want to use and click the floating chain button.
 
 ### My voice is not transcribed
 
-The Mic engine is **Windows speech** by default, and Windows blocks speech recognition until you accept
-it once. Open **Settings > Privacy & security > Speech** and turn on **Online speech recognition**. The
-engine line under the Settings dropdowns states this explicitly when it is the cause.
+Work through these in order.
 
-If it still does not work, that microphone may not be usable by the Windows engine. Switch the Mic engine
-to **Browser** (needs the extension and a bound tab).
+1. **Is the engine armed?** Open Settings and read the line under the engine dropdowns. If it says
+   `Windows speech — live`, the engine is fine and the problem is the audio reaching it. If it shows a
+   message instead, that message is the reason - and if the reason is the OS setting, use the **Open
+   Windows speech settings** button next to it.
+2. **Is the right microphone selected?** This is the common one on a machine with several inputs. Watch
+   the microphone button while you speak: it fills like a level meter. If it does not move, the app is
+   listening to the wrong device - pick another one from the microphone dropdown.
+3. **Still nothing after the meter moves?** Switch the Mic engine to **Browser** (needs the extension and
+   a bound tab), which uses Chrome's recogniser instead.
 
-The interviewer's side is a separate engine (**System**, Windows Live Captions) and is unaffected.
+The interviewer's side is a separate engine (**System**, Windows Live Captions) and is unaffected by all
+of this.
 
 ### A technical term was corrected to the wrong word
 

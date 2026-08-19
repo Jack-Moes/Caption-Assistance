@@ -1,5 +1,50 @@
 # Changelog
 
+## 1.2.1 — 2026.8.19
+
+A microphone fix that had been hiding behind two others, plus the cleanup that came
+out of auditing for it.
+
+### Fixed
+
+- **The chosen microphone was not the one being transcribed.** The WinRT reader and
+  Chrome both capture the Windows *default* device - neither takes a device argument -
+  so picking a microphone in the app moved the level meter but not the recogniser. On
+  a machine with two inputs that meant sound visibly arriving and nothing ever
+  transcribed. `setSelectedAsDefaultMic()` existed for exactly this and was never
+  called from anywhere. Choosing a mic now moves the Windows default, for the engines
+  that follow it; local and cloud engines are given the device explicitly and are left
+  alone.
+- **A blocked speech engine was invisible.** Windows never prompts for the speech
+  privacy policy from this API path, and the refusal was only reported inside the
+  Settings popover, so a fresh machine showed a silent microphone and no explanation.
+  Failures now raise the on-screen notice, and when the cause is the OS setting an
+  **Open Windows speech settings** button opens that page directly.
+- **A working engine looked the same as a broken one.** The reader reports `ready`
+  once Windows arms the recogniser; that was dropped along with everything that was
+  not a caption. The engine line now reads "Windows speech — live".
+- **`ss` could not be given a hotkey.** The action existed in main with a key field
+  and had no row in Settings, so the field could never be set.
+- **The answer panel header overlapped itself.** The live window was 640x440, leaving
+  the panel about 320px wide, and 1.2.0 added font controls to a header that already
+  held a title, a status and two buttons - they landed on top of the title. Both
+  window sizes are now 1.3x (live 832x572, other screens 1330x910), the size readout
+  was dropped, and the row truncates and wraps instead of overlapping, so a narrow
+  window degrades rather than breaks.
+
+### Removed
+
+Dead code found while auditing the above:
+
+- the About/help modal, unreachable since help became a native dialog - and
+  `showOverlay` still poked at it, which would have thrown once it was gone
+- the microphone inspector window, whose `mic-test/` folder has not existed for some
+  time
+- `toggleInspector`, `onInspectorClosed` and `setEngine` in the preload bridge, none
+  of which had a handler in main
+- references to `micSelect2` and `micInspectorToggle`, elements that do not exist
+
+
 ## 1.2.0 — 2026.8.19
 
 Three changes aimed at the moment that actually decides the answer: the question

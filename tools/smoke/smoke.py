@@ -198,6 +198,12 @@ check('session deleted', json.loads(J("localStorage.getItem('ce_sessions')||'[]'
 print("")
 print("== 9. clipboard action ==")
 check('clipboard hotkey row present', bool(J("!!document.getElementById('hkClip')")))
+# ss had a key field in main and no row in Settings, so it could never actually be bound
+check('ss hotkey row present', bool(J("!!document.getElementById('hkSimple')")))
+rs = J("cap.setHotkeys({simple:{key:'F11'}}).then(r=>JSON.stringify(r.results)+'|'+r.actions.simple.key)", timeout=20)
+check('ss hotkey registers', '"simple":true' in rs and rs.endswith('|F11'), rs)
+J("cap.setHotkeys({simple:{key:''}})", timeout=20)
+
 res = J("cap.setHotkeys({clip:{key:'F9'}}).then(r=>JSON.stringify(r.results)+'|'+r.actions.clip.key)", timeout=20)
 check('clip hotkey registers', '"clip":true' in res and res.endswith('|F9'), res)
 J("cap.setHotkeys({clip:{key:''}})", timeout=20)
@@ -495,6 +501,33 @@ check('recent fixes are recorded for the UI', len(rec) > 0 and 'to' in (rec[0] i
 
 print("")
 print("== 15. answer layout ==")
+# The header carries a title, a status and five controls inside the live window's answer panel. Adding
+# the font buttons made them overlap the title at the old 640x440 live size, so assert the geometry.
+J("document.getElementById('startNew').click()")
+time.sleep(0.7)
+J("document.getElementById('startSession').click()")
+time.sleep(0.8)
+J("document.getElementById('permOk').click()")
+time.sleep(4)
+if J("document.getElementById('answerModeBtn').getAttribute('aria-pressed')") != 'true':
+    J("document.getElementById('answerModeBtn').click()")
+    time.sleep(0.6)
+geo = json.loads(J("""(function(){
+  var head=document.querySelector('.gpt-answer-head');
+  var title=head.querySelector('div'), acts=head.querySelector('.gpt-answer-actions');
+  var r=function(e){var b=e.getBoundingClientRect();return {l:b.left,r:b.right,t:b.top,b:b.bottom};};
+  var h=r(head), ti=r(title), ac=r(acts);
+  var sameRow = !(ti.b <= ac.t || ac.b <= ti.t);
+  return JSON.stringify({overlap: sameRow ? Math.max(0, ti.r-ac.l) : 0,
+    overflow: Math.max(0, ac.r-h.r), w: Math.round(window.innerWidth), h: Math.round(window.innerHeight)});})()"""))
+check('answer header controls do not overlap the title', geo['overlap'] < 1, geo)
+check('answer header does not overflow its panel', geo['overflow'] < 1, geo)
+check('live window is the 1.3x size', geo['w'] >= 800 and geo['h'] >= 560, '%dx%d' % (geo['w'], geo['h']))
+J("document.getElementById('endBtn').click()")
+time.sleep(0.9)
+J("document.getElementById('doneDelete').click()")
+time.sleep(2)
+
 check('answer renderer present', bool(J("typeof renderAnswer === 'function' && typeof resetAnswerLayout === 'function'")))
 
 def render(text, final=False):

@@ -233,7 +233,6 @@
               <button class="answer-copy answer-font" id="ansNext" type="button" title="Back to the current answer">&#8250;</button>
             </span>
             <button class="answer-copy answer-font" id="ansFontDown" type="button" title="Smaller answer text">A-</button>
-            <span class="answer-font-val" id="ansFontVal"></span>
             <button class="answer-copy answer-font" id="ansFontUp" type="button" title="Larger answer text">A+</button>
             <button class="answer-copy answer-refresh" id="answerRefreshBtn" type="button" title="Recover the current request without sending a duplicate"><svg class="ic"><use href="#i-refresh"/></svg>Refresh</button>
             <button class="answer-copy" id="answerCopyBtn" type="button" title="Copy the current GPT answer"><svg class="ic"><use href="#i-copy" id="answerCopyUse"/></svg>Copy</button>
@@ -371,6 +370,10 @@
         <button class="hk" id="hkBb" data-act="bb" style="margin-left:auto">—</button>
       </div>
       <div class="set-row">
+        <div class="set-lbl">ss <span class="help-note" style="opacity:.6">simple answer</span></div>
+        <button class="hk" id="hkSimple" data-act="simple" style="margin-left:auto">—</button>
+      </div>
+      <div class="set-row">
         <div class="set-lbl" style="display:flex;align-items:center;gap:7px"><svg class="ic" style="width:17px;height:17px;color:var(--teal)"><use href="#i-latest"/></svg>Latest sentence</div>
         <button class="hk" id="hkLatest" data-act="latest" style="margin-left:auto">—</button>
       </div>
@@ -486,46 +489,6 @@
         <button class="btn-light delete-cancel" id="savedDeleteCancel">Cancel</button>
         <button class="btn-danger delete-confirm" id="savedDeleteOk"><svg class="ic"><use href="#i-trash"/></svg> Delete session</button>
       </div>
-    </div>
-    <div id="mHelp" class="modal help-modal hidden">
-      <button class="m-x" id="helpX"><svg class="ic"><use href="#i-close"/></svg></button>
-      <div class="m-title" style="margin-bottom:4px">Caption assistance</div>
-      <div class="help-sub">Interview support over Windows Live Captions<br>Haru Mikage · Japan · 2026.8.15</div>
-      <div class="help-body">
-        <div class="help-sec">
-          <div class="help-h">Transcript</div>
-          <ul>
-            <li>Drag to select · double-click = a sentence · triple-click = the line</li>
-            <li>“Till the end” keeps following new text (auto-scroll stays on)</li>
-            <li>Minimap on the right — drag to navigate; red marks show where you sent from</li>
-          </ul>
-        </div>
-        <div class="help-sec">
-          <div class="help-h">Send to ChatGPT <span class="help-note">needs the Chrome extension + a bound tab</span></div>
-          <ul>
-            <li><b>↑ Send (F1)</b> the selection · <b>aa (F2)</b> keyword + selection · <b>zz (F3)</b> keyword only</li>
-            <li><b>✎ Edit-before-send</b> pastes without submitting · <b>Compact (F6)</b> moves the chat to a fresh tab</li>
-            <li>In ChatGPT: the <b>chain</b> icon binds the tab, the <b>copy</b> icon copies the last answer</li>
-          </ul>
-        </div>
-        <div class="help-sec">
-          <div class="help-h">GPT auto scroll <span class="help-note">read-along</span></div>
-          <ul>
-            <li>Read the answer aloud — the current line is marked and the page follows you</li>
-            <li>Toggle in Settings (gear) → GPT auto scroll</li>
-          </ul>
-        </div>
-        <div class="help-sec">
-          <div class="help-h">Other</div>
-          <ul>
-            <li><b>Mic</b> button mutes your mic system-wide (also a hotkey); its fill shows the live input level</li>
-            <li><b>Eye:</b> Live Captions opacity, window opacity, keep-on-top</li>
-            <li><b>Shield:</b> privacy overlay and recovery shortcuts · <b>Gear:</b> audio, ChatGPT actions and hotkeys</li>
-            <li><b>Save</b> (bookmark) exports the transcript</li>
-          </ul>
-        </div>
-      </div>
-      <button class="primary block" id="helpOk">Got it</button>
     </div>
   </div>
 
