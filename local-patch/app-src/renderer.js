@@ -816,7 +816,10 @@ async function pushPrivacy(patch) {
   }
 }
 try { const s = JSON.parse(localStorage.getItem('ce_hotcfg') || 'null'); if (s) hotCfg = Object.assign(hotCfg, s); } catch (e) {}
-if (hotCfg.bb && hotCfg.bb.text === 'bb') hotCfg.bb.text = 'zz';   // rename the old default bb -> zz
+// aa / zz / ss are fixed words: the bundled prompts define [aa], [ss] and [zz] modes by those exact
+// names, so a custom keyword silently stopped matching the prompt. Drop anything an older build saved.
+if (hotCfg.aa) delete hotCfg.aa.label;
+if (hotCfg.bb) delete hotCfg.bb.text;
 // one-time migration: machines still carrying the old pre-set F1/F2/F3/F6 defaults -> unbind them
 if ((hotCfg.send || {}).key === 'F1' && (hotCfg.aa || {}).key === 'F2' && (hotCfg.bb || {}).key === 'F3' && (hotCfg.compact || {}).key === 'F6') {
   hotCfg.send.key = ''; hotCfg.aa.key = ''; hotCfg.bb.key = ''; hotCfg.compact.key = '';
@@ -832,26 +835,20 @@ function applyHotUI() {
   if ($('hkClip')) $('hkClip').textContent = (hotCfg.clip && hotCfg.clip.key) || '—';
   if ($('hkOcr')) $('hkOcr').textContent = (hotCfg.ocr && hotCfg.ocr.key) || '—';
   if ($('hkPrivacyClick')) $('hkPrivacyClick').textContent = displayAccel(privacyCfg.clickHotkey);
-  $('kwAa').value = hotCfg.aa.label != null ? hotCfg.aa.label : 'aa';
-  $('kwBb').value = hotCfg.bb.text != null ? hotCfg.bb.text : 'zz';
   $('kwCompactUrl').value = hotCfg.compact.url || '';
-  const aBtn = $('aaBtn'); if (aBtn) aBtn.textContent = hotCfg.aa.label || 'aa';   // button labels mirror the keywords
-  const aCode = $('aaCodeBtn'); if (aCode) aCode.textContent = hotCfg.aa.label || 'aa';   // coding-mode aa mirrors the same keyword
-  const bBtn = $('bbBtn'); if (bBtn) bBtn.textContent = hotCfg.bb.text || 'zz';
+  const aBtn = $('aaBtn'), bBtn = $('bbBtn');
   // toolbar button tooltips show the CURRENTLY-SET hotkey (or nothing if unbound), not a hard-coded F-key
   const hk = (k) => k ? '  (' + k + ')' : '';
   const setTitle = (id, base) => { const b = $(id); if (b) b.title = base; };
   setTitle('gptBtn', 'Send the selection to ChatGPT' + hk(hotCfg.send.key));
-  if (aBtn) aBtn.title = 'Send your "' + (hotCfg.aa.label || 'aa') + '" keyword + the selection to ChatGPT' + hk(hotCfg.aa.key);
-  if (bBtn) bBtn.title = 'Send "' + (hotCfg.bb.text || 'zz') + '" only to ChatGPT' + hk(hotCfg.bb.key);
+  if (aBtn) aBtn.title = 'Send the "aa" keyword + the selection to ChatGPT' + hk(hotCfg.aa.key);
+  if (bBtn) bBtn.title = 'Send "zz" only to ChatGPT' + hk(hotCfg.bb.key);
   setTitle('latestBtn', 'Select the latest sentence without sending it' + hk(hotCfg.latest && hotCfg.latest.key));
   setTitle('compactBtn', 'Compact this chat into a new tab' + hk(hotCfg.compact.key));
   setTitle('micBtn', 'Mute the microphone system-wide (stops it reaching every app, incl. meetings)' + hk(hotCfg.micmute && hotCfg.micmute.key));
 }
 function markHk(id, ok) { const b = $(id); if (b) b.classList.toggle('taken', ok === false); }
 function syncHot() {
-  hotCfg.aa.label = ($('kwAa').value || '').trim() || 'aa';
-  hotCfg.bb.text = ($('kwBb').value || '').trim() || 'bb';
   hotCfg.compact.url = ($('kwCompactUrl').value || '').trim();
   try { localStorage.setItem('ce_hotcfg', JSON.stringify(hotCfg)); } catch (e) {}
   window.cap.setHotkeys(hotCfg).then((r) => {
@@ -908,7 +905,7 @@ document.addEventListener('keydown', (e) => {
   if (act) syncHot();
   if (pact) pushPrivacy();
 }, true);
-['kwAa', 'kwBb', 'kwCompactUrl'].forEach((id) => $(id).addEventListener('change', syncHot));
+['kwCompactUrl'].forEach((id) => { const e = $(id); if (e) e.addEventListener('change', syncHot); });
 $('privacyEnabled').addEventListener('change', () => pushPrivacy({ enabled: $('privacyEnabled').checked }));
 $('privacyCapture').addEventListener('change', () => pushPrivacy({ captureProtected: $('privacyCapture').checked }));
 $('privacyClick').addEventListener('change', () => {
@@ -1346,7 +1343,7 @@ function renderSentMarks() {
       const rr = document.createRange(); rr.setStart(node, off); rr.setEnd(node, off);
       const rect = rr.getBoundingClientRect(); const pr = div.getBoundingClientRect();
       const mk = document.createElement('span'); mk.className = 'sent-mark m-' + m.act;
-      mk.setAttribute('data-act', ({ send: '↑', aa: (hotCfg.aa.label || 'aa'), simple: 'simple', compact: '⤢', paste: '✎' }[m.act] || '•'));
+      mk.setAttribute('data-act', ({ send: '↑', aa: 'aa', simple: 'simple', compact: '⤢', paste: '✎' }[m.act] || '•'));
       mk.style.top = (rect.top - pr.top) + 'px'; mk.style.left = (rect.left - pr.left) + 'px';
       div.appendChild(mk);
       // solid rule under the marked line so the send point reads as a clear divider

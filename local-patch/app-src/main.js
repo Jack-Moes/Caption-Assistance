@@ -465,8 +465,8 @@ async function getSelectionText() {
 //   bb   : just the literal "bb"                  (your pre-set "bb" instruction, no context)
 let actions = {
   send:    { key: '' },
-  aa:      { key: '', label: 'aa' },
-  bb:      { key: '', text: 'zz' },
+  aa:      { key: '', label: 'aa' },   // fixed: the bundled prompts define an [aa] mode by this name
+  bb:      { key: '', text: 'zz' },    // fixed: likewise [zz]
   simple:  { key: '', label: 'ss' },   // sends the "ss" keyword + context; the primed session's [ss] mode = a simple 3-4 sentence answer
   latest:  { key: '' },                // select the latest transcript sentence in the app; never sends it
   compact: { key: '', url: '' },  // open a fresh ChatGPT window at this URL + move the history there
@@ -771,8 +771,8 @@ ipcMain.on('set-mode', (e, m) => { const cm = (m === 'Live Coding'); if (cm !== 
 ipcMain.handle('set-hotkeys', (e, cfg) => {
   cfg = cfg || {};
   if (cfg.send && typeof cfg.send.key === 'string') actions.send.key = cfg.send.key;
-  if (cfg.aa)      { if (typeof cfg.aa.key === 'string') actions.aa.key = cfg.aa.key; if (typeof cfg.aa.label === 'string') actions.aa.label = cfg.aa.label; }
-  if (cfg.bb)      { if (typeof cfg.bb.key === 'string') actions.bb.key = cfg.bb.key; if (typeof cfg.bb.text === 'string') actions.bb.text = cfg.bb.text; }
+  if (cfg.aa && typeof cfg.aa.key === 'string') actions.aa.key = cfg.aa.key;
+  if (cfg.bb && typeof cfg.bb.key === 'string') actions.bb.key = cfg.bb.key;
   if (cfg.simple && typeof cfg.simple.key === 'string') actions.simple.key = cfg.simple.key;
   if (cfg.latest && typeof cfg.latest.key === 'string') actions.latest.key = cfg.latest.key;
   if (cfg.compact) { if (typeof cfg.compact.key === 'string') actions.compact.key = cfg.compact.key; if (typeof cfg.compact.url === 'string') actions.compact.url = cfg.compact.url; }

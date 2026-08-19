@@ -232,7 +232,8 @@ This is useful when one interview question arrives in several caption fragments.
 
 Send, aa, ss, and Edit need selected transcript text. If there is no selection, the app blocks the request and shows **Select a question first, or press Latest**. The Latest button is a safe shortcut: it selects but does not automatically send the newest sentence. Confirm the highlighted sentence, then press the action you want.
 
-`aa` and `zz` are just configurable command words. Their exact meaning comes from the prompt that you gave ChatGPT.
+`aa`, `ss` and `zz` are command words the prompt understands. Their exact meaning comes from the prompt
+you gave ChatGPT - see the `[aa]`, `[ss]` and `[zz]` sections in the bundled prompts.
 
 ### Questions that are not spoken
 
@@ -398,7 +399,8 @@ Important privacy distinction: Caption assistance has no external deployment-ver
 - **Latest sentence** can also be assigned a global hotkey. It selects the newest transcript sentence without sending it.
 - **ss** (simple answer) can now be bound like `aa` and `zz`.
 - **Send clipboard** and **Read screen (OCR)** are hotkey-only actions; they have no toolbar button.
-- Edit the `aa` and `zz` fields to change those command words.
+- `aa`, `ss` and `zz` are fixed words. The bundled prompts define `[aa]`, `[ss]` and `[zz]` modes by
+  exactly those names, so a renamed keyword would simply stop matching the prompt.
 - Set a **Compact** URL to open a specific GPT/custom GPT; leave it blank for a new normal chat.
 - Live Coding always reserves F1–F5 for plan, code, improve, edge, and complexity while that mode is active.
 
