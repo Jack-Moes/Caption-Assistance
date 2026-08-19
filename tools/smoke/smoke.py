@@ -424,6 +424,75 @@ time.sleep(0.3)
 gone = json.loads(J("cap.previewContext('Kubernetes deployment').then(x=>JSON.stringify(x))", timeout=20))
 check('removing the file removes its context', all('Kubernetes migration' not in ch['text'] for ch in gone.get('chunks', [])), gone.get('chars'))
 
+print("")
+print("== 14. technical term repair ==")
+check('term module loaded', bool(J("!!(window.CATermCorrect && window.CATermCorrect.fix)")))
+
+def fixed(t):
+    return J("(function(){return window.CATermCorrect.fix(" + json.dumps(t) + ").text;})()")
+
+# the failures the bundled prompt itself documents
+POSITIVE = [
+    ('we run everything on post grass', 'Postgres'),
+    ('the events go through coffca', 'Kafka'),
+    ('we store them in s three', 'S3'),
+    ('we use oh auth for login', 'OAuth'),
+    ('the services talk over gee are pee see', 'gRPC'),
+    ('we deployed it on cube netties', 'Kubernetes'),
+    ('the pipeline is sci dee', 'CI/CD'),
+    ('written in type script', 'TypeScript'),
+]
+missed = []
+for text, want in POSITIVE:
+    got = fixed(text)
+    if want not in str(got):
+        missed.append('%r -> %r (wanted %s)' % (text, got, want))
+check('mangled terms repaired (%d cases)' % len(POSITIVE), not missed, '; '.join(missed))
+
+# casing only
+check('known term gets canonical casing', 'Kubernetes' in str(fixed('we moved to kubernetes last year')),
+      fixed('we moved to kubernetes last year'))
+
+# NEGATIVE: ordinary speech must survive untouched. A wrong "fix" is worse than no fix.
+NEGATIVE = [
+    'we had a whole rack of servers in that room',
+    'there are some known issues with the old build',
+    'i can tell you about the team i worked with',
+    'the coffee machine was the real bottleneck',
+    'she asked me to describe my approach in detail',
+    'we shipped it last year and it still runs',
+    'that was the first time we tried that',
+    'it is a best practice on most teams',
+    'the cost was lower than we expected',
+]
+broken = []
+for text in NEGATIVE:
+    got = str(fixed(text))
+    if got != text:
+        broken.append('%r -> %r' % (text, got))
+check('ordinary speech left alone (%d cases)' % len(NEGATIVE), not broken, '; '.join(broken))
+
+# vocabulary really does come from the user's documents
+ctx_dir2 = json.loads(J("cap.getContext().then(c=>JSON.stringify(c))", timeout=20))['dir']
+os.makedirs(ctx_dir2, exist_ok=True)
+probe2 = os.path.join(ctx_dir2, '_smoke_terms.txt')
+io.open(probe2, 'w', encoding='utf-8').write(
+    'I maintained the CheckoutOrchestrator service and the PaymentsAPI gateway, '
+    'both deployed on EKS with Helm.' + chr(10))
+vocab = json.loads(J("cap.getTermVocab().then(v=>JSON.stringify(v))", timeout=20))
+check('vocabulary mined from documents', 'CheckoutOrchestrator' in vocab and 'PaymentsAPI' in vocab,
+      ', '.join(vocab[:6]))
+n = J("(function(){return window.CATermCorrect.setVocabulary(" + json.dumps(vocab) + ");})()")
+check('vocabulary loaded into the corrector', isinstance(n, (int, float)) and n > 50, n)
+got_doc = str(fixed('the checkout orchestrater kept timing out'))
+check('a document term is repaired too', 'CheckoutOrchestrator' in got_doc, got_doc)
+check('the leading article is not swallowed', got_doc.startswith('the '), got_doc)
+os.remove(probe2)
+
+# the UI can show its work
+rec = json.loads(J("JSON.stringify(window.CATermCorrect.recent(3))"))
+check('recent fixes are recorded for the UI', len(rec) > 0 and 'to' in (rec[0] if rec else {}), rec[:2])
+
 c.close()
 bad = [r for r in results if not r[1]]
 print('')

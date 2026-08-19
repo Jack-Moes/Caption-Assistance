@@ -402,6 +402,13 @@
         <span class="op-title" style="margin:0">Use my documents <span class="help-note" style="opacity:.6; display:block; font-weight:400; margin-top:2px">attach the relevant part of your CV / JD to the question</span></span>
         <label class="switch"><input id="ctxToggle" type="checkbox" /><span class="slider-sw"></span></label>
       </div>
+      <div class="op-row op-toggle" style="margin-top:13px; padding-top:13px; border-top:1px solid var(--border)">
+        <span class="op-title" style="margin:0">Fix technical terms <span class="help-note" style="opacity:.6; display:block; font-weight:400; margin-top:2px">repair names live captions mishear, using your documents</span></span>
+        <label class="switch"><input id="termToggle" type="checkbox" /><span class="slider-sw"></span></label>
+      </div>
+      <div class="op-row" style="margin-top:7px">
+        <span id="termInfo" class="help-note" style="opacity:.6; font-size:10.5px; line-height:1.35"></span>
+      </div>
       <div class="op-row" style="margin-top:7px; display:flex; align-items:center; gap:8px">
         <span id="ctxInfo" class="help-note" style="opacity:.6; font-size:10.5px; line-height:1.35; flex:1; min-width:0"></span>
         <button class="hk" id="ctxOpen" style="flex:0 0 auto">Open folder</button>
@@ -515,6 +522,7 @@
 
 </div>
 <script src="question-extract.js"></script>
+<script src="term-correct.js"></script>
 <script src="transcribe.js"></script>
 <script src="renderer.js"></script>
 </body>

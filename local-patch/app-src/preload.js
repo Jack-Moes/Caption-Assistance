@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('cap', {
   saveFile: (text) => ipcRenderer.invoke('save-file', text),
   getPrompts: () => ipcRenderer.invoke('get-prompts'),
   getContext: () => ipcRenderer.invoke('get-context'),
+  getTermVocab: () => ipcRenderer.invoke('get-term-vocab'),
   setContextEnabled: (on) => ipcRenderer.invoke('set-context-enabled', on),
   previewContext: (q) => ipcRenderer.invoke('preview-context', q),
   openContextDir: () => ipcRenderer.invoke('open-context-dir'),

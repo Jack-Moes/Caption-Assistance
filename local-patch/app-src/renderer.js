@@ -87,6 +87,13 @@ let speakerEngine = 'system', micEngine = 'windows';   // per-source STT backend
 let speakerOpen = false;    // cloud speaker utterance still growing?
 let caLastChromeMic = 0;    // last time the extension fed a Chrome-speech mic caption (preferred over WinRT)
 const MAX_PARAS = 3000;      // cap retained paragraphs so long sessions stay responsive
+// Repair mangled technical terms once, at the point every source funnels through, so the transcript
+// the user reads and the text that gets sent are the same corrected string.
+let termFix = true;
+function caFixTerms(t) {
+  if (!termFix || !window.CATermCorrect) return t;
+  try { return window.CATermCorrect.fix(t).text; } catch (e) { return t; }
+}
 function segTokens(s) { return s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean); }
 // Two readings are the SAME Live Captions segment when they overlap heavily. LC
 // revises the HEAD (prepends words, fixes homophones) and grows the TAIL of the
@@ -145,6 +152,7 @@ function findRewindBase(pTexts, wSegs) {
 const LC_NOISE = /^(ready to show live captions|live captions? (are on|will appear|is (on|starting))|turn on live captions|caption settings|downloading|preparing)/i;
 // Live Captions (speaker) -> speakerParas, with the rolling-window dedup + rewind detection.
 function ingestWindow(cur) {
+  cur = caFixTerms(cur);
   const segs = cur.split('\n').map(s => s.replace(/[ \t]+/g, ' ').trim()).filter(Boolean).filter(s => !LC_NOISE.test(s));
   if (!segs.length) return;
   const old = speakerParas, oldLen = old.length;
@@ -185,6 +193,7 @@ function touchMicView(fromIdx) {
   dirtyFrom = Math.min(dirtyFrom, Math.max(0, i));
 }
 function ingestMic(text, status) {
+  text = caFixTerms(text);
   text = (text || '').replace(/\s+/g, ' ').trim();
   if (!text) return;
   const last = micParas[micParas.length - 1];
@@ -711,7 +720,7 @@ function togglePop(anchor, popId) {
 document.querySelectorAll('[data-pop]').forEach((b) => b.addEventListener('click', (e) => {
   e.stopPropagation();
   if (b.dataset.pop === 'opacityPop' && screen === 'live') window.cap.ensureLiveCaptions();
-  if (b.dataset.pop === 'settingsPop') refreshContextInfo();   // the folder can change while the app runs
+  if (b.dataset.pop === 'settingsPop') { refreshContextInfo(); refreshTermVocab(); }   // the folder can change while the app runs
   togglePop(b, b.dataset.pop);
 }));
 // A transparent no-drag backdrop covers the window while a popover is open, so a click
@@ -1374,6 +1383,29 @@ async function refreshContextInfo() {
   }
 }
 if ($('ctxToggle')) $('ctxToggle').addEventListener('change', () => { try { window.cap.setContextEnabled($('ctxToggle').checked); } catch (e) {} });
+// term repair: vocabulary comes from the same documents, so refresh it whenever they might have changed
+async function refreshTermVocab() {
+  if (!window.CATermCorrect || !window.cap.getTermVocab) return;
+  let v = [];
+  try { v = await window.cap.getTermVocab(); } catch (e) { v = []; }
+  const n = window.CATermCorrect.setVocabulary(v);
+  const info = $('termInfo');
+  if (info) {
+    const recent = window.CATermCorrect.recent(3);
+    info.textContent = recent.length
+      ? ('recent fixes: ' + recent.map((c) => c.from + ' \u2192 ' + c.to).join('  \u00b7  '))
+      : (n + ' terms known (' + v.length + ' from your documents)');
+  }
+}
+try { const tv = localStorage.getItem('ca_term_fix'); if (tv !== null) termFix = tv === '1'; } catch (e) {}
+if ($('termToggle')) {
+  $('termToggle').checked = termFix;
+  $('termToggle').addEventListener('change', () => {
+    termFix = $('termToggle').checked;
+    try { localStorage.setItem('ca_term_fix', termFix ? '1' : '0'); } catch (e) {}
+  });
+}
+refreshTermVocab();
 if ($('ctxOpen')) $('ctxOpen').addEventListener('click', async () => { try { await window.cap.openContextDir(); } catch (e) {} setTimeout(refreshContextInfo, 900); });
 refreshContextInfo();
 if ($('consoleToggle')) {
@@ -1428,6 +1460,7 @@ if ($('keyInput')) $('keyInput').addEventListener('keydown', (e) => { if (e.key 
 // cloud SPEAKER transcript -> speakerParas (utterance model, mirrors ingestMic)
 function ingestSpeakerWS(text, status) {
   if (!text) return;
+  text = caFixTerms(text);
   const last = speakerParas[speakerParas.length - 1];
   if (speakerOpen && last && last.src === 'speaker') last.text = text;
   else { speakerParas.push({ t: fmt(elapsed()), ts: elapsed(), text: text, src: 'speaker' }); speakerOpen = true; }

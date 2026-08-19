@@ -662,6 +662,27 @@ ipcMain.handle('preview-context', (e, question) => {
   const r = pickContext(String(question || ''));
   return { chunks: r.chunks.map((c) => ({ file: c.file, score: c.score, hits: c.hits, text: c.text.slice(0, 200) })), chars: r.text.length };
 });
+// Terms worth repairing are the ones the user actually works with, so mine them from the same
+// documents the context feature already reads: anything that looks like a product or API name
+// (internal capital, digit, dot, or an all-caps acronym) rather than ordinary prose.
+ipcMain.handle('get-term-vocab', () => {
+  const seen = Object.create(null);
+  const out = [];
+  for (const c of loadContextChunks()) {
+    const words = String(c.text || '').split(/[^A-Za-z0-9+#.]+/);
+    for (const w of words) {
+      const t = w.replace(/^[.]+|[.]+$/g, '');
+      if (t.length < 2 || t.length > 32) continue;
+      const technical = /[A-Za-z][A-Z]/.test(t) || /[0-9]/.test(t) || /[.]/.test(t) || (/^[A-Z]{2,}$/.test(t));
+      if (!technical) continue;
+      const k = t.toLowerCase();
+      if (seen[k]) continue;
+      seen[k] = 1;
+      out.push(t);
+    }
+  }
+  return out;
+});
 ipcMain.handle('open-context-dir', () => {
   const dir = contextDir();
   try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
