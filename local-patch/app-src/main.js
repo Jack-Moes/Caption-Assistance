@@ -471,7 +471,8 @@ let actions = {
   latest:  { key: '' },                // select the latest transcript sentence in the app; never sends it
   compact: { key: '', url: '' },  // open a fresh ChatGPT window at this URL + move the history there
   micmute: { key: '' },             // toggle system mic mute (handled in the renderer so it uses the chosen device)
-  clip:    { key: '' }              // send whatever is on the clipboard (a pasted problem statement, a chat message)
+  clip:    { key: '' },             // send whatever is on the clipboard (a pasted problem statement, a chat message)
+  ocr:     { key: '' }              // read the foreground window with the Windows OCR engine and send that
 };
 async function sendAction(id, suppliedSelection) {
   console.log('[CA-main] sendAction:', id);
@@ -483,6 +484,21 @@ async function sendAction(id, suppliedSelection) {
     }
     enqueueCommand({ type: 'compact', url: (actions.compact.url || ''), ts: Date.now() });
     if (win && !win.isDestroyed()) { win.webContents.send('gpt-status', { connected: extConnected(), justSent: true, action: 'compact' }); win.webContents.send('advance-selection', 'compact'); }
+    return;
+  }
+  if (id === 'ocr') {
+    // A coding problem is on screen, never in the audio, so no transcript selection can ever contain it.
+    // Read whatever window the user is looking at. Windows' own OCR engine: no install, key or network.
+    if (win && !win.isDestroyed() && win.isFocused()) {
+      emitGptResult({ ok: false, error: 'Bring the window you want to read to the front first - Caption assistance itself is focused.', code: 'ocr-self', returnToApp: false, actionId: 'ocr' });
+      return;
+    }
+    const out = await readScreenText();
+    if (!out.ok) {
+      emitGptResult({ ok: false, error: 'Could not read the screen: ' + out.error, code: 'ocr-failed', returnToApp: false, actionId: 'ocr' });
+      return;
+    }
+    doSendChatGPT(out.text, 'ocr', true);
     return;
   }
   if (id === 'clip') {
@@ -517,6 +533,32 @@ async function sendAction(id, suppliedSelection) {
   if (id !== 'bb' && win && !win.isDestroyed()) win.webContents.send('advance-selection', id);
 }
 ipcMain.on('send-action', (e, id, selectedText) => sendAction(id, selectedText));
+// Run the bundled OCR reader over the foreground window. Resolves { ok, text } or { ok:false, error }.
+const OCR_MAX_CHARS = 4000;   // a full window can carry a lot of chrome; keep the prompt sane
+function readScreenText() {
+  return new Promise((resolve) => {
+    let ps;
+    try { ps = spawn(scriptPath('ocr-reader.exe'), [], { windowsHide: true, cwd: scriptsDir }); }
+    catch (e) { resolve({ ok: false, error: String((e && e.message) || e) }); return; }
+    let out = '', done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    const timer = setTimeout(() => { try { ps.kill(); } catch (e) {} finish({ ok: false, error: 'the screen reader timed out' }); }, 15000);
+    ps.stdout.on('data', (d) => { out += d.toString(); });
+    ps.on('error', (e) => { clearTimeout(timer); finish({ ok: false, error: String((e && e.message) || e) }); });
+    ps.on('close', () => {
+      clearTimeout(timer);
+      let o = null;
+      const raw = String(out);
+      const brace = raw.lastIndexOf('{');
+      try { if (brace >= 0) o = JSON.parse(raw.slice(brace)); } catch (e) {}
+      if (!o) { finish({ ok: false, error: 'the screen reader returned nothing' }); return; }
+      if (!o.ok) { finish({ ok: false, error: String(o.error || 'unknown') }); return; }
+      const text = String(o.text || '').trim();
+      if (!text) { finish({ ok: false, error: 'no text was found in that window' }); return; }
+      finish({ ok: true, text: text.length > OCR_MAX_CHARS ? text.slice(0, OCR_MAX_CHARS) : text });
+    });
+  });
+}
 
 // default prompts page: read the bundled prompts/*.txt (resources/prompts when packaged, ./prompts in dev)
 function promptsDir() { return path.join(app.isPackaged ? process.resourcesPath : __dirname, 'prompts'); }
@@ -582,6 +624,7 @@ function registerHotkeys() {
   // Available in every interview mode. In Live Coding, F1-F5 remain reserved and a
   // conflicting Latest binding is visibly marked as unavailable in Settings.
   results.clip = reg(actions.clip.key, () => sendAction('clip'));
+  results.ocr = reg(actions.ocr.key, () => sendAction('ocr'));
   results.latest = reg(actions.latest.key, () => { if (win && !win.isDestroyed()) win.webContents.send('hotkey-latest'); });
   results.micmute = reg(actions.micmute.key, () => { if (win && !win.isDestroyed()) win.webContents.send('hotkey-mute'); });
   console.log('[CA-main] registered hotkeys (coding=' + codingMode + ') -> ok:', JSON.stringify(results));
@@ -599,6 +642,7 @@ ipcMain.handle('set-hotkeys', (e, cfg) => {
   if (cfg.compact) { if (typeof cfg.compact.key === 'string') actions.compact.key = cfg.compact.key; if (typeof cfg.compact.url === 'string') actions.compact.url = cfg.compact.url; }
   if (cfg.micmute && typeof cfg.micmute.key === 'string') actions.micmute.key = cfg.micmute.key;
   if (cfg.clip && typeof cfg.clip.key === 'string') actions.clip.key = cfg.clip.key;
+  if (cfg.ocr && typeof cfg.ocr.key === 'string') actions.ocr.key = cfg.ocr.key;
   const results = registerHotkeys();
   return { ok: true, results: results, actions: actions };
 });

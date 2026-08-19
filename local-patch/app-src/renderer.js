@@ -739,7 +739,8 @@ let hotCfg = {
   latest:  { key: '' },
   compact: { key: '', url: '' },
   micmute: { key: '' },
-  clip:    { key: '' }
+  clip:    { key: '' },
+  ocr:     { key: '' }
 };
 const PRIVACY_UI_DEFAULTS = {
   enabled: false, captureProtected: true, clickHotkey: 'CommandOrControl+Shift+X'
@@ -814,6 +815,7 @@ function applyHotUI() {
   $('hkCompact').textContent = hotCfg.compact.key || '—';
   if ($('hkMic')) $('hkMic').textContent = (hotCfg.micmute && hotCfg.micmute.key) || '—';
   if ($('hkClip')) $('hkClip').textContent = (hotCfg.clip && hotCfg.clip.key) || '—';
+  if ($('hkOcr')) $('hkOcr').textContent = (hotCfg.ocr && hotCfg.ocr.key) || '—';
   if ($('hkPrivacyClick')) $('hkPrivacyClick').textContent = displayAccel(privacyCfg.clickHotkey);
   $('kwAa').value = hotCfg.aa.label != null ? hotCfg.aa.label : 'aa';
   $('kwBb').value = hotCfg.bb.text != null ? hotCfg.bb.text : 'zz';
@@ -838,7 +840,7 @@ function syncHot() {
   hotCfg.compact.url = ($('kwCompactUrl').value || '').trim();
   try { localStorage.setItem('ce_hotcfg', JSON.stringify(hotCfg)); } catch (e) {}
   window.cap.setHotkeys(hotCfg).then((r) => {
-    if (r && r.results) { markHk('hkSend', r.results.send); markHk('hkAa', r.results.aa); markHk('hkBb', r.results.bb); markHk('hkLatest', r.results.latest); markHk('hkCompact', r.results.compact); markHk('hkMic', r.results.micmute); markHk('hkClip', r.results.clip); }
+    if (r && r.results) { markHk('hkSend', r.results.send); markHk('hkAa', r.results.aa); markHk('hkBb', r.results.bb); markHk('hkLatest', r.results.latest); markHk('hkCompact', r.results.compact); markHk('hkMic', r.results.micmute); markHk('hkClip', r.results.clip); markHk('hkOcr', r.results.ocr); }
   }).catch(() => {});
 }
 // rebind a hotkey: click its box, then press the new key
