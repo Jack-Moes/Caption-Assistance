@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.2.0 — 2026.8.19
+
+Three changes aimed at the moment that actually decides the answer: the question
+arriving correctly, and being able to speak the reply without reading all of it first.
+
+### Added
+
+- **Technical term repair.** Live captions are accurate on ordinary speech and wrong
+  on exactly the words that decide the answer. The bundled prompt already documented
+  the damage ("Postgres" -> "post grass", "Kafka" -> "coffca", "S3" -> "S three") and
+  asked the model to guess what was meant. The app now repairs it at the source, in
+  two conservative passes: a table of spell-outs no phonetic key can recover, and
+  phonetic matching against a KNOWN vocabulary only - the terms mined from your CV and
+  job description plus a small built-in list. Nothing outside that vocabulary can be
+  produced, so a mis-hearing cannot become an arbitrary wrong word. Settings has a
+  toggle and lists the most recent corrections.
+- **Answer layout for speaking.** The opening sentence is separated and set heavier;
+  the closing confirmation question is split onto its own line; A- / A+ set the text
+  size. Streaming still grows one text node in place, so the per-chunk cost stays
+  proportional to the delta.
+- **Answer history.** Completed answers are kept for the session with the question
+  that produced them, with back/forward controls and the question shown in the status
+  line. A live chunk no longer yanks the view away while you read an earlier answer,
+  and the answers are stored with the saved session.
+
+### Fixed
+
+- Phonetic similarity alone could rewrite ordinary speech: "last" and "rust" collapse
+  to the same key, and scoring on the better of sound/spelling turned "last year" into
+  "Rust year". Both must now agree, and short words go through the alias table only.
+- A multi-word correction candidate could swallow a leading article, turning "the
+  checkout orchestrater" into "CheckoutOrchestrator" with the "the" consumed.
+- Stepping forward through answer history landed on the newest entry and labelled it
+  "past", when that entry is the current answer.
+
+
 ## 1.1.0 — 2026.8.19
 
 App version 1.0.2 → 1.1.0. Chrome extension 1.4.0 → 1.6.0.

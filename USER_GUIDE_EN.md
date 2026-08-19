@@ -1,6 +1,6 @@
 # Caption assistance — Easy User Guide (English)
 
-Version 1.1.0 · Haru Mikage · Japan · 2026.8.19
+Version 1.2.0 · Haru Mikage · Japan · 2026.8.19
 
 ## 1. What is this program?
 
@@ -270,6 +270,29 @@ Click the top chat-box icon to choose where answers appear.
 
 Possible status labels are **Queued**, **Sending**, **Generating**, **Complete**, and **Response error**.
 
+### How the answer is laid out
+
+You have to start talking before you have read the whole thing, so the panel is arranged for that:
+
+- The **opening sentence** is separated and shown heavier. Say that first and you have bought yourself the
+  seconds to scan the rest.
+- The short **confirmation question** the prompts ask for appears below a divider instead of disappearing
+  into the paragraph.
+- **A-** and **A+** change the text size. The setting is remembered.
+
+### Going back to an earlier answer
+
+Interviewers follow up on what you just said. The panel keeps every completed answer from this session,
+with the question that produced it.
+
+- The **‹ ›** controls step back and forward; the label shows your position, for example `2 / 4 · past`.
+- While you are looking at an earlier answer, the status line names the question it came from.
+- A new answer arriving does **not** pull the view away while you are reading an older one. Press **›**
+  to return to the current answer.
+
+The answers are saved with the session, so a later review shows what was asked and what came back, not
+just the transcript.
+
 ### When to use Refresh
 
 Use **Refresh** when the answer exists in ChatGPT but the app still shows Waiting or Response error. Refresh tries to reconnect to the same request without sending a duplicate. It may briefly wake a suspended ChatGPT tab.
@@ -356,6 +379,22 @@ Important privacy distinction: Caption assistance has no external deployment-ver
 - Set a **Compact** URL to open a specific GPT/custom GPT; leave it blank for a new normal chat.
 - Live Coding always reserves F1–F5 for plan, code, improve, edge, and complexity while that mode is active.
 
+### Fix technical terms
+
+On by default. Live captions are accurate on ordinary speech and wrong on exactly the words that matter -
+"Postgres" becomes "post grass", "Kafka" becomes "coffca", "S3" becomes "S three". The app repairs those
+before the question is sent, so both the transcript you read and the text ChatGPT receives are correct.
+
+It only ever produces words it already knows: the technical terms found in **your documents** (see below)
+plus a small built-in list, and a table of known spell-outs. A word it does not recognise is left exactly
+as it was, so ordinary speech is never rewritten.
+
+Settings shows the most recent corrections, for example `post grass → Postgres`. If one looks wrong, turn
+the toggle off - the transcript is then left untouched.
+
+Adding your CV and the job description makes this markedly better, because the terms that will come up in
+the interview are the ones already written there.
+
 ### Your documents (CV, job description, notes)
 
 Instead of pasting your background into the prompt, keep it as files and let the app attach only the part
@@ -411,7 +450,7 @@ The recording mixes the available system audio and selected microphone. If recor
 - The app does not send the PC name, Windows username, local IP, or distribution ID to an external verification server.
 - The app-extension bridge uses only `127.0.0.1`, ports `17632-17636`, on this PC.
 - The app runs on any network; there is no subnet restriction.
-- Your documents folder, question detection and screen OCR all run on this PC only. Nothing is uploaded by those features.
+- Your documents folder, question detection, technical-term repair and screen OCR all run on this PC only. Nothing is uploaded by those features.
 - ChatGPT features use ChatGPT's internet service. Anything you send - a selected question, the clipboard, OCR text, and the document blocks attached to it - goes to ChatGPT along with it.
 - Windows speech recognition is a Microsoft service; Windows requires you to accept its speech privacy policy before it will run at all.
 - Chrome speech (the Browser mic engine) sends audio to the browser's speech service while it is active.
@@ -466,6 +505,15 @@ If it still does not work, that microphone may not be usable by the Windows engi
 to **Browser** (needs the extension and a bound tab).
 
 The interviewer's side is a separate engine (**System**, Windows Live Captions) and is unaffected.
+
+### A technical term was corrected to the wrong word
+
+Open Settings and look at the line under **Fix technical terms** - it lists the most recent corrections.
+Turn the toggle off to stop rewriting entirely.
+
+The corrector only produces words from your documents plus a small built-in list, so it cannot invent a
+word; a wrong result means two of your own terms sound alike. Removing the unused one from your documents
+folder is usually enough.
 
 ### The app warns that the page layout was not recognised
 
