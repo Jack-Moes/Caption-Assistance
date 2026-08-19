@@ -659,6 +659,7 @@ function openReview(s) {
 }
 function startLiveSession() {
   resetAnswerHistory();
+  routeMicToSelection();   // a selection restored from last time still has to move the OS default
   setBusy(false);
   if (window.cap.resetGptSession) window.cap.resetGptSession();
   review = false; captureStopped = false; frozenElapsed = 0; dirtyFrom = Infinity; resetTranscript();
@@ -1411,9 +1412,17 @@ let micMuted = false, micUnmutedOnStart = false;
 function micLabel(name) { const m = /\(([^)]+)\)/.exec(name || ''); return (m ? m[1] : String(name || '').replace(/^Microphone\s*/i, '')).trim(); }
 let micDevice = '', micDevicesList = [];
 try { micDevice = localStorage.getItem('caMicDevice') || ''; } catch (e) {}
+// The WinRT reader and Chrome both capture the WINDOWS DEFAULT device -- neither takes a device
+// argument -- so choosing a microphone here has to move that default as well. Without it the level
+// meter followed your choice while the recognizer kept listening to a different, often silent, device:
+// the meter showed sound arriving and not one word was ever transcribed.
+function micEngineFollowsSystemDefault() { return micEngine === 'windows' || micEngine === 'browser'; }
 function setSelectedAsDefaultMic(force) {
   const d = micDevicesList.find((x) => x.name === micDevice);
   if (d && d.id && (force || !d.isDefault) && window.cap.setDefaultMic) window.cap.setDefaultMic(d.id).catch(() => {});
+}
+function routeMicToSelection() {
+  if (micEngineFollowsSystemDefault()) setSelectedAsDefaultMic(true);
 }
 function applyMicState() {
   const b = $('micBtn'), u = $('micUse');
@@ -1455,6 +1464,7 @@ micSelects().forEach((sel) => sel.addEventListener('change', () => {
   micSelects().forEach((s) => { if (s !== sel) s.value = micDevice; });
   window.cap.micMute('query', '').then((r) => { if (r && r.ok) { micMuted = r.muted; applyMicState(); } }).catch(() => {});
   try { window.cap.setMicName(micDevice); } catch (e) {}   // local GPU STT re-captures the chosen mic
+  routeMicToSelection();                    // Windows speech / Chrome follow the OS default, so move it
   if (isCloud(micEngine)) applyEngines();   // cloud mic: reconnect the transcriber on the new device
   if (screen === 'live') startMicMeter();
 }));
@@ -1611,6 +1621,7 @@ async function applyEngines() {
   const ib = $('engineInstallBtn'); if (ib) ib.style.display = needLocal ? 'block' : 'none';
   const ei = $('engineInstall'); if (ei) ei.style.display = needLocal ? 'block' : 'none';   // hide the install log unless a Local engine is selected
   if (micEngine === 'local') { try { window.cap.setMicName(micDevice); } catch (e) {} }
+  routeMicToSelection();   // switching TO windows/browser must point the OS default at the chosen mic
   const clouds = [];   // cloud engines needing a socket (mic first; add speaker if different)
   if (isCloud(micEngine)) clouds.push(micEngine);
   if (isCloud(speakerEngine) && !clouds.includes(speakerEngine)) clouds.push(speakerEngine);

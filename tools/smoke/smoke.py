@@ -643,6 +643,35 @@ check('recovery hides the shortcut',
       'live' in (J("(document.getElementById('engineNote')||{}).textContent") or ''),
       J("(document.getElementById('engineNote')||{}).textContent"))
 
+print("")
+print("== 18. the chosen mic is the one that gets transcribed ==")
+# The WinRT reader and Chrome capture the WINDOWS DEFAULT device, not the app's selection, so choosing a
+# mic has to move that default. It did not, and the meter followed your choice while the recognizer sat
+# on a different, silent device - sound arriving, nothing ever transcribed.
+mics = json.loads(J("cap.micList().then(a=>JSON.stringify(a))", timeout=30))
+check('more than one capture device to test with', len(mics) >= 2, [m['name'] for m in mics])
+if len(mics) >= 2:
+    original = next((m for m in mics if m['isDefault']), mics[0])
+    other = next(m for m in mics if m['name'] != original['name'])
+
+    def select(name):
+        J("(function(){var s=document.getElementById('micSelect0')||document.getElementById('micSelect');"
+          "s.value=" + json.dumps(name) + ";s.dispatchEvent(new Event('change',{bubbles:true}));})()")
+
+    def is_default(name):
+        cur = json.loads(J("cap.micList().then(a=>JSON.stringify(a))", timeout=30))
+        return any(m['name'] == name and m['isDefault'] for m in cur)
+
+    select(other['name'])
+    moved = wait_for(lambda: is_default(other['name']), 25, 2)
+    check('choosing a mic moves the Windows default to it', moved, other['name'])
+
+    select(original['name'])
+    restored = wait_for(lambda: is_default(original['name']), 25, 2)
+    check('the original default is restored', restored, original['name'])
+else:
+    skip('choosing a mic moves the Windows default to it', 'only one capture device on this machine')
+
 c.close()
 bad = [r for r in results if not r[1]]
 print('')
