@@ -227,6 +227,11 @@
         <div class="gpt-answer-head">
           <div><b>GPT Answer</b><span class="gpt-answer-status" id="gptAnswerStatus">Ready</span></div>
           <div class="gpt-answer-actions">
+            <span class="ans-hist hidden" id="ansHistNav">
+              <button class="answer-copy answer-font" id="ansPrev" type="button" title="Previous answer from this session">&#8249;</button>
+              <span class="answer-font-val" id="ansHistLabel"></span>
+              <button class="answer-copy answer-font" id="ansNext" type="button" title="Back to the current answer">&#8250;</button>
+            </span>
             <button class="answer-copy answer-font" id="ansFontDown" type="button" title="Smaller answer text">A-</button>
             <span class="answer-font-val" id="ansFontVal"></span>
             <button class="answer-copy answer-font" id="ansFontUp" type="button" title="Larger answer text">A+</button>

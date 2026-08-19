@@ -554,6 +554,56 @@ check('size is persisted', J("localStorage.getItem('ca_ans_font')") == str(befor
 
 J("resetAnswerLayout()")
 
+print("")
+print("== 16. answer history ==")
+check('history helpers present', bool(J("typeof pushAnswerHistory === 'function' && typeof showAnswerAt === 'function'")))
+J("resetAnswerHistory()")
+
+def hist():
+    return json.loads(J("JSON.stringify({n:answerHistory.length, idx:answerViewIdx, label:(document.getElementById('ansHistLabel')||{}).textContent, navHidden:(document.getElementById('ansHistNav')||{}).className})"))
+
+J("pushAnswerHistory('How do you handle retries?', 'We make every consumer idempotent. That is the whole trick.')")
+h1 = hist()
+check('first answer stored', h1['n'] == 1 and h1['idx'] == -1, h1)
+
+J("pushAnswerHistory('And rollback?', 'We keep the previous release warm and flip traffic back. It takes about a minute.')")
+h2 = hist()
+check('second answer stored', h2['n'] == 2, h2)
+check('nav becomes visible with two answers', 'hidden' not in (h2['navHidden'] or ''), h2['navHidden'])
+check('label shows the live position', h2['label'].startswith('2 / 2'), h2['label'])
+
+# a recovery re-delivering the identical answer must not create a duplicate entry
+J("pushAnswerHistory('And rollback?', 'We keep the previous release warm and flip traffic back. It takes about a minute.')")
+check('identical re-delivery is not duplicated', hist()['n'] == 2, hist())
+
+# step back to the earlier answer
+J("document.getElementById('ansPrev').click()")
+time.sleep(0.3)
+h3 = hist()
+body_now = J("(function(){var b=document.querySelector('#gptAnswerText .ans-body');var l=document.querySelector('#gptAnswerText .ans-lead');return (l?l.textContent:'')+' | '+(b?b.textContent:'');})()")
+check('prev shows the earlier answer', h3['idx'] == 0 and 'idempotent' in str(body_now), body_now[:80])
+check('label marks it as past', 'past' in (h3['label'] or ''), h3['label'])
+check('status names the earlier question', 'retries' in str(J("(document.getElementById('gptAnswerStatus')||{}).textContent")),
+      J("(document.getElementById('gptAnswerStatus')||{}).textContent"))
+
+# a streaming chunk must not yank the view away while reading history
+J("answerRequestId='probe-req'")
+J("receiveGptAnswer({requestId:'probe-req', phase:'stream', text:'a brand new answer arriving', seq:999999})")
+time.sleep(0.3)
+still = J("(function(){var b=document.querySelector('#gptAnswerText .ans-body');var l=document.querySelector('#gptAnswerText .ans-lead');return (l?l.textContent:'')+' | '+(b?b.textContent:'');})()")
+check('live streaming does not interrupt reading history', 'idempotent' in str(still), still[:80])
+
+# forward returns to live
+J("document.getElementById('ansNext').click()")
+time.sleep(0.3)
+check('next returns to the live answer', hist()['idx'] == -1, hist())
+
+# saved sessions carry the answers
+saved = json.loads(J("JSON.stringify(buildSessionObj(1,'probe','00:10').answers||[])"))
+check('answers are saved with the session', len(saved) == 2 and saved[0]['q'].startswith('How do you handle'), saved[:1])
+
+J("resetAnswerHistory(); resetAnswerLayout()")
+
 c.close()
 bad = [r for r in results if not r[1]]
 print('')

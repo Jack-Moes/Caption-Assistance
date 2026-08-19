@@ -121,6 +121,9 @@ body.dark .mic-select option, body.dark .set-mic option { background: #1a252f; c
 .ans-tail { margin-top: 11px; padding-top: 9px; border-top: 1px dashed var(--border);
   font-weight: 600; line-height: 1.5; }
 .ans-tail.hidden { display: none; }
+.ans-hist { display: inline-flex; align-items: center; gap: 4px; }
+.ans-hist.hidden { display: none; }
+.answer-copy:disabled { opacity: .35; cursor: default; }
 .answer-font { min-width: 30px; justify-content: center; font-weight: 700; }
 .answer-font-val { font-size: 10px; opacity: .5; min-width: 30px; text-align: center; align-self: center; }
 body.dark .ans-lead { color: #eaf2ff; }

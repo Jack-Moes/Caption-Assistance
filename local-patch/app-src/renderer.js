@@ -658,6 +658,7 @@ function openReview(s) {
   setupReplay(s);   // audio player + timestamp sync (stays hidden if this session has no recording)
 }
 function startLiveSession() {
+  resetAnswerHistory();
   setBusy(false);
   if (window.cap.resetGptSession) window.cap.resetGptSession();
   review = false; captureStopped = false; frozenElapsed = 0; dirtyFrom = Infinity; resetTranscript();
@@ -918,6 +919,54 @@ $('privacyClick').addEventListener('change', () => {
   }, 2000);
 });
 if (window.cap.onPrivacyState) window.cap.onPrivacyState(renderPrivacy);
+// ---- answers from this session ----------------------------------------------------------------
+// Interviewers follow up on what you just said ("in that migration you mentioned, how did you roll
+// back?"). With Answer in app you never leave the app, so the previous answer was simply gone -- only
+// the newest one was ever held. Keep them for the session and let the panel step back through them.
+let answerHistory = [];      // [{ q, a, ts }] oldest first
+let answerViewIdx = -1;      // -1 = following the live answer
+let pendingQuestion = '';    // what was sent for the request currently in flight
+function resetAnswerHistory() { answerHistory = []; answerViewIdx = -1; pendingQuestion = ''; renderAnswerNav(); }
+function renderAnswerNav() {
+  const nav = $('ansHistNav'), label = $('ansHistLabel');
+  const prev = $('ansPrev'), next = $('ansNext');
+  if (!nav) return;
+  nav.classList.toggle('hidden', answerHistory.length < 2 && answerViewIdx < 0);
+  const live = answerViewIdx < 0;
+  const idx = live ? answerHistory.length : answerViewIdx + 1;
+  if (label) label.textContent = answerHistory.length ? (idx + ' / ' + answerHistory.length + (live ? '' : ' \u00b7 past')) : '';
+  if (prev) prev.disabled = !answerHistory.length || (!live && answerViewIdx === 0);
+  if (next) next.disabled = live;
+}
+function pushAnswerHistory(q, a) {
+  const text = String(a || '').trim();
+  if (!text) return;
+  const last = answerHistory[answerHistory.length - 1];
+  if (last && last.a === text) return;                 // a recovery can re-deliver the same answer
+  answerHistory.push({ q: String(q || '').trim(), a: text, ts: Date.now() });
+  if (answerHistory.length > 40) answerHistory.shift();
+  answerViewIdx = -1;
+  renderAnswerNav();
+}
+function showAnswerAt(i) {
+  if (i < 0 || i >= answerHistory.length) return;
+  answerViewIdx = i;
+  const e = answerHistory[i];
+  resetAnswerLayout();
+  const out = $('gptAnswerText');
+  if (out) out.classList.remove('empty');
+  renderAnswer(e.a, true);
+  setAnswerStatus(e.q ? ('Earlier: ' + e.q.slice(0, 60) + (e.q.length > 60 ? '\u2026' : '')) : 'Earlier answer', 'done');
+  renderAnswerNav();
+}
+function showLiveAnswer() {
+  answerViewIdx = -1;
+  resetAnswerLayout();
+  const out = $('gptAnswerText');
+  if (out) out.classList.remove('empty');
+  if (answerText) renderAnswer(answerText, true);
+  renderAnswerNav();
+}
 function renderAnswerMode() {
   const b = $('answerModeBtn');
   b.setAttribute('aria-pressed', answerInApp ? 'true' : 'false');
@@ -940,6 +989,10 @@ function setAnswerStatus(label, phase) {
   renderAnswerMode();
 }
 function beginGptAnswer(status) {
+  // capture the question now: by the time the answer lands the selection may already have advanced
+  try { pendingQuestion = (selectionCaptionText() || '').trim(); } catch (e) { pendingQuestion = ''; }
+  if (!pendingQuestion && status.action) pendingQuestion = String(status.action);
+  answerViewIdx = -1;
   answerRequestId = String(status.requestId || ''); answerSeq = -1; answerText = ''; answerRecovering = false;
   const out = $('gptAnswerText'); resetAnswerLayout(); out.textContent = 'Waiting for ChatGPT…'; out.classList.add('empty');
   setAnswerStatus('Queued…', 'waiting');
@@ -1023,6 +1076,7 @@ function renderAnswer(full, isFinal) {
 }
 function receiveGptAnswer(r) {
   if (!r || !r.requestId || r.requestId !== answerRequestId) return;
+  if (answerViewIdx >= 0 && r.phase === 'stream') return;   // reading an earlier answer; do not yank the view
   const seq = Number.isFinite(+r.seq) ? +r.seq : 0;
   if (seq <= answerSeq) return;
   answerSeq = seq;
@@ -1039,7 +1093,11 @@ function receiveGptAnswer(r) {
     answerText = r.text;
     if (follow) out.scrollTop = out.scrollHeight;
   }
-  if (r.phase === 'final') { setAnswerStatus(r.error ? 'Complete · monitor timeout' : 'Complete', 'done'); setBusy(false); }
+  if (r.phase === 'final') {
+    setAnswerStatus(r.error ? 'Complete · monitor timeout' : 'Complete', 'done');
+    setBusy(false);
+    pushAnswerHistory(pendingQuestion, answerText);
+  }
   else setAnswerStatus('Generating…', 'waiting');
 }
 $('answerModeBtn').addEventListener('click', () => {
@@ -1065,6 +1123,16 @@ try { const f = parseInt(localStorage.getItem('ca_ans_font') || '', 10); if (f >
 if ($('ansFontDown')) $('ansFontDown').addEventListener('click', () => { answerFontPx = Math.max(12, answerFontPx - 1); applyAnswerFont(); });
 if ($('ansFontUp')) $('ansFontUp').addEventListener('click', () => { answerFontPx = Math.min(26, answerFontPx + 1); applyAnswerFont(); });
 applyAnswerFont();
+if ($('ansPrev')) $('ansPrev').addEventListener('click', () => {
+  const i = answerViewIdx < 0 ? answerHistory.length - 2 : answerViewIdx - 1;
+  if (i >= 0) showAnswerAt(i);
+});
+if ($('ansNext')) $('ansNext').addEventListener('click', () => {
+  if (answerViewIdx < 0) return;
+  // the newest history entry IS the current answer, so stepping onto it means going back to live
+  if (answerViewIdx + 1 >= answerHistory.length - 1) showLiveAnswer(); else showAnswerAt(answerViewIdx + 1);
+});
+renderAnswerNav();
 if (window.cap.onGptAnswer) window.cap.onGptAnswer(receiveGptAnswer);
 if (window.cap.onGptStatus) window.cap.onGptStatus((s) => {
   if (!s) return;
@@ -1705,7 +1773,8 @@ function entryList(arr) { return (arr || []).map((p) => ({ ts: p.ts || 0, text: 
 function buildSessionObj(id, name, dur) {
   return { id: id, ts: Date.now(), name: name, duration: dur, mode: mode,
     speaker: fullTextOf(speakerParas), mic: fullTextOf(micParas), text: fullTextOf(speakerParas),
-    speakerEntries: entryList(speakerParas), micEntries: entryList(micParas) };
+    speakerEntries: entryList(speakerParas), micEntries: entryList(micParas),
+    answers: answerHistory.map((e) => ({ q: e.q, a: e.a, ts: e.ts })) };
 }
 function entriesToParas(entries, fallbackText, src) {
   if (entries && entries.length) return entries.map((e) => ({ t: fmt(e.ts || 0), ts: e.ts || 0, text: e.text, src: src }));
