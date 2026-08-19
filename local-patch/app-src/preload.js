@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('cap', {
   setContextEnabled: (on) => ipcRenderer.invoke('set-context-enabled', on),
   previewContext: (q) => ipcRenderer.invoke('preview-context', q),
   openContextDir: () => ipcRenderer.invoke('open-context-dir'),
+  openSpeechSettings: () => ipcRenderer.invoke('open-speech-settings'),
   getVersion: () => ipcRenderer.invoke('get-version'),
   saveAudio: (id, data) => ipcRenderer.invoke('save-audio', id, data),
   getAudio: (id) => ipcRenderer.invoke('get-audio', id),

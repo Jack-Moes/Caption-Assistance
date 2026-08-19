@@ -1531,6 +1531,10 @@ if ($('termToggle')) {
   });
 }
 refreshTermVocab();
+if ($('speechSettingsBtn')) $('speechSettingsBtn').addEventListener('click', () => {
+  try { window.cap.openSpeechSettings(); } catch (e) {}
+  showActionNotice('Turn on "Online speech recognition", then pick the Mic engine again.', 'warn', 8000);
+});
 if ($('ctxOpen')) $('ctxOpen').addEventListener('click', async () => { try { await window.cap.openContextDir(); } catch (e) {} setTimeout(refreshContextInfo, 900); });
 refreshContextInfo();
 if ($('consoleToggle')) {
@@ -1652,13 +1656,26 @@ if (window.cap.onBrowserMic) window.cap.onBrowserMic((s) => {
 // This used to accept reports only while a 'local' engine was selected, so a broken Windows-speech mic
 // stayed completely silent in the UI. Gate on the engine for THAT source instead, which also drops stale
 // reports arriving from an engine the user has already switched away from.
-if (window.cap.onEngineStatus) window.cap.onEngineStatus((s) => {
+// Named rather than inline so the failure paths can be exercised directly: reproducing a blocked OS
+// speech setting on a machine where it works is otherwise impossible.
+function onEngineStatusUpdate(s) {
   if (!s) return;
   const engForSrc = (s.src === 'mic') ? micEngine : speakerEngine;
   if (s.engine && s.engine !== engForSrc) return;
-  if (s.state === 'live') setEngineNote(engineSummary() + ' — live');
-  else if (s.state === 'error') setEngineNote((s.src === 'mic' ? '🎤 ' : '🔊 ') + (s.detail || 'error'));
-});
+  const btn = $('speechSettingsBtn');
+  if (s.state === 'live') {
+    setEngineNote(engineSummary() + ' — live');
+    if (btn) btn.style.display = 'none';
+  } else if (s.state === 'error') {
+    const detail = s.detail || 'error';
+    setEngineNote((s.src === 'mic' ? '🎤 ' : '🔊 ') + detail);
+    // engineNote lives inside the settings popover, so on a fresh machine a blocked engine was
+    // completely invisible: the mic was simply silent with no explanation anywhere on screen.
+    showActionNotice(detail, 'warn', 9000);
+    if (btn) btn.style.display = /blocked by an OS setting/i.test(detail) ? 'block' : 'none';
+  }
+}
+if (window.cap.onEngineStatus) window.cap.onEngineStatus(onEngineStatusUpdate);
 applyEngines();
 
 // ---- sound-reactive pulse: glow the mic button with the live input level ----

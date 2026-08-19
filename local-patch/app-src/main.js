@@ -683,6 +683,12 @@ ipcMain.handle('get-term-vocab', () => {
   }
   return out;
 });
+// Windows never prompts for the speech privacy policy from this API path -- it just refuses. Take the
+// user straight to the page that unblocks it instead of describing where to click.
+ipcMain.handle('open-speech-settings', () => {
+  try { require('electron').shell.openExternal('ms-settings:privacy-speech'); return true; }
+  catch (e) { return false; }
+});
 ipcMain.handle('open-context-dir', () => {
   const dir = contextDir();
   try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}

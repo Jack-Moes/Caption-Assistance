@@ -604,6 +604,45 @@ check('answers are saved with the session', len(saved) == 2 and saved[0]['q'].st
 
 J("resetAnswerHistory(); resetAnswerLayout()")
 
+print("")
+print("== 17. blocked engine is visible outside Settings ==")
+check('speech settings shortcut exists', bool(J("!!document.getElementById('speechSettingsBtn')")))
+check('shortcut is hidden while nothing is wrong',
+      J("getComputedStyle(document.getElementById('speechSettingsBtn')).display") == 'none',
+      J("getComputedStyle(document.getElementById('speechSettingsBtn')).display"))
+check('the settings shortcut is wired to main', J("typeof cap.openSpeechSettings === 'function'"))
+
+# exercise the failure paths directly: a machine where speech works cannot produce the blocked state
+J("(function(){var n=document.getElementById('actionNotice'); if(n){n.textContent='';n.className='action-notice hidden';}})()")
+J("micEngine='windows'")
+J("""onEngineStatusUpdate({src:'mic', engine:'windows', state:'error',
+  detail:'Windows speech is blocked by an OS setting - open Settings > Privacy & security > Speech and turn ON "Online speech recognition", then pick the engine again.'})""")
+time.sleep(0.4)
+notice = J("(document.getElementById('actionNotice')||{}).textContent")
+check('a blocked engine raises a toast without opening Settings',
+      'hidden' not in (J("(document.getElementById('actionNotice')||{}).className") or 'hidden'), notice[:80])
+check('the toast carries the real reason', 'Online speech recognition' in str(notice), str(notice)[:90])
+check('the settings shortcut appears',
+      J("getComputedStyle(document.getElementById('speechSettingsBtn')).display") == 'block',
+      J("getComputedStyle(document.getElementById('speechSettingsBtn')).display"))
+
+# an unrelated failure still warns, but must not offer the speech-settings shortcut
+J("onEngineStatusUpdate({src:'mic', engine:'windows', state:'error', detail:'local transcription could not start (spawn failed)'})")
+time.sleep(0.4)
+check('an unrelated failure still warns', 'could not start' in str(J("(document.getElementById('actionNotice')||{}).textContent")),
+      J("(document.getElementById('actionNotice')||{}).textContent"))
+check('shortcut hidden for an unrelated failure',
+      J("getComputedStyle(document.getElementById('speechSettingsBtn')).display") == 'none',
+      J("getComputedStyle(document.getElementById('speechSettingsBtn')).display"))
+
+# recovery clears the shortcut again
+J("onEngineStatusUpdate({src:'mic', engine:'windows', state:'live'})")
+time.sleep(0.3)
+check('recovery hides the shortcut',
+      J("getComputedStyle(document.getElementById('speechSettingsBtn')).display") == 'none' and
+      'live' in (J("(document.getElementById('engineNote')||{}).textContent") or ''),
+      J("(document.getElementById('engineNote')||{}).textContent"))
+
 c.close()
 bad = [r for r in results if not r[1]]
 print('')
