@@ -1054,6 +1054,13 @@ function startMicReader() {
       // The reader reports its own failures (blocked OS setting, unusable device). These used to be dropped
       // here because only partial/final were handled, so a dead mic engine looked exactly like silence.
       if (o.status === 'error') { sendEngineErrorThrottled('mic', micReaderHint(o.text), 'windows'); continue; }
+      // The reader says 'ready' once Windows has actually armed the recognizer. Pass it on: without it
+      // a working engine and a blocked one looked identical in the UI until someone spoke.
+      if (o.status === 'ready') {
+        _engErrSeen.mic = null;
+        if (win && !win.isDestroyed()) win.webContents.send('engine-status', { engine: 'windows', src: 'mic', state: 'live' });
+        continue;
+      }
       if (o.text == null) continue;
       // (1) live 'mic' caption source -> the caption window (tagged so it can be filtered / merged)
       if (win && !win.isDestroyed() && (o.status === 'partial' || o.status === 'final')) {
