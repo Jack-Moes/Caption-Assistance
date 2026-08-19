@@ -509,7 +509,7 @@ async function sendAction(id, suppliedSelection) {
       emitGptResult({ ok: false, error: 'The clipboard is empty - copy the question or problem statement first.', code: 'clipboard-empty', returnToApp: false, actionId: 'clip' });
       return;
     }
-    doSendChatGPT(clipText, 'clip', true);
+    doSendChatGPT(withContext(clipText), 'clip', true);
     return;
   }
   let text = '', submit = true;
@@ -521,10 +521,10 @@ async function sendAction(id, suppliedSelection) {
     emitGptResult({ ok: false, error: 'Select a question first, or press Latest.', code: 'selection-required', returnToApp: false, actionId: id });
     return;
   }
-  if (id === 'send') { text = sel; }
+  if (id === 'send') { text = withContext(sel); }
   else if (id === 'paste') { text = sel; submit = false; }   // edit-before-send: paste only, no submit
-  else if (id === 'aa') { const label = (actions.aa.label || 'aa'); text = label + '\n' + sel; }
-  else if (id === 'simple') { const label = (actions.simple.label || 'ss'); text = label + '\n' + sel; }
+  else if (id === 'aa') { const label = (actions.aa.label || 'aa'); text = withContext(label + '\n' + sel); }
+  else if (id === 'simple') { const label = (actions.simple.label || 'ss'); text = withContext(label + '\n' + sel); }
   else if (id === 'bb') { text = (actions.bb.text || 'bb'); }
   console.log('[CA-main] action', id, '-> text length', text.length, 'submit', submit);
   dbg('  ' + id + ' built textlen=' + text.length);
@@ -561,6 +561,113 @@ function readScreenText() {
 }
 
 // default prompts page: read the bundled prompts/*.txt (resources/prompts when packaged, ./prompts in dev)
+
+// ---- Local context: resume / job description / round notes, kept as plain files ----
+// The bundled prompt used to carry the candidate's background inline, so changing CV meant editing the
+// prompt. Keep it as data in userData\context instead and attach only the parts a given question needs.
+// Pure keyword scoring: no embeddings, no vector store, no network -- these documents are tens of KB.
+const CONTEXT_MAX_CHUNKS = 4;
+const CONTEXT_MAX_CHARS = 1800;
+let contextEnabled = true;
+let contextCache = { at: 0, chunks: [] };
+function contextDir() { return path.join(app.getPath('userData'), 'context'); }
+const CTX_STOP = new Set(('a an the and or but if then than that this these those of in on at to for with by from as is are was were be been being do does did have has had i me my we our you your it its they them their he she his her not no so very can could would should will just about into over under more most other some such only own same too what which who whom when where why how all any both each few').split(' '));
+function ctxTokens(text) {
+  const out = [];
+  const parts = String(text || '').toLowerCase().split(/[^a-z0-9+#.]+/);
+  for (const w of parts) {
+    const t = w.replace(/^[.]+|[.]+$/g, '');
+    if (t.length > 1 && !CTX_STOP.has(t)) out.push(t);
+  }
+  return out;
+}
+function loadContextChunks() {
+  const now = Date.now();
+  if (contextCache.chunks.length && now - contextCache.at < 5000) return contextCache.chunks;
+  const dir = contextDir();
+  const chunks = [];
+  let files = [];
+  try { files = fs.readdirSync(dir).filter((f) => /\.(txt|md)$/i.test(f)).sort(); } catch (e) { files = []; }
+  for (const f of files) {
+    let text = '';
+    try { text = fs.readFileSync(path.join(dir, f), 'utf8'); } catch (e) { continue; }
+    // Strip CR first: files written on Windows (Notepad, most editors) separate paragraphs with CRLF,
+    // so splitting on bare newlines matched nothing and the whole document collapsed into one chunk.
+    const NLC = String.fromCharCode(10);
+    const flat = text.split(String.fromCharCode(13)).join('');
+    for (const para of flat.split(NLC + NLC)) {
+      const t = para.trim();
+      if (t.length < 24) continue;                 // headings and stray lines carry no answerable detail
+      chunks.push({ file: f, text: t.length > 600 ? t.slice(0, 600) : t, tokens: ctxTokens(t) });
+    }
+  }
+  // Rare terms identify a relevant paragraph; words repeated across the whole CV do not.
+  const df = Object.create(null);
+  for (const c of chunks) for (const t of new Set(c.tokens)) df[t] = (df[t] || 0) + 1;
+  const N = chunks.length || 1;
+  for (const c of chunks) {
+    c.weight = Object.create(null);
+    for (const t of new Set(c.tokens)) c.weight[t] = Math.log(1 + N / (df[t] || 1));
+  }
+  contextCache = { at: now, chunks: chunks };
+  return chunks;
+}
+function pickContext(question) {
+  const chunks = loadContextChunks();
+  if (!chunks.length) return { chunks: [], text: '' };
+  const q = new Set(ctxTokens(question));
+  if (!q.size) return { chunks: [], text: '' };
+  const scored = [];
+  for (const c of chunks) {
+    let score = 0, hits = 0;
+    for (const t of q) if (c.weight[t] != null) { score += c.weight[t]; hits++; }
+    if (hits) scored.push({ file: c.file, text: c.text, score: score / Math.sqrt(c.tokens.length || 1), hits: hits });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const picked = [];
+  let chars = 0;
+  for (const c of scored) {
+    if (picked.length >= CONTEXT_MAX_CHUNKS || chars + c.text.length > CONTEXT_MAX_CHARS) break;
+    picked.push(c);
+    chars += c.text.length;
+  }
+  const NLC = String.fromCharCode(10);
+  const body = picked.map((c) => c.text).join(NLC + NLC);
+  return { chunks: picked, text: body };
+}
+// Attach AFTER the question: the prompts key off a leading keyword line, so nothing may precede it.
+function withContext(text) {
+  if (!contextEnabled) return text;
+  let picked;
+  try { picked = pickContext(text); } catch (e) { return text; }
+  if (!picked.text) return text;
+  const NLC = String.fromCharCode(10);
+  return text + NLC + NLC + '--- my background (context, do not quote verbatim) ---' + NLC + picked.text;
+}
+ipcMain.handle('get-context', () => {
+  const dir = contextDir();
+  let files = [];
+  try {
+    files = fs.readdirSync(dir).filter((f) => /\.(txt|md)$/i.test(f)).sort().map((f) => {
+      let chars = 0;
+      try { chars = fs.readFileSync(path.join(dir, f), 'utf8').length; } catch (e) {}
+      return { name: f, chars: chars };
+    });
+  } catch (e) {}
+  return { dir: dir, enabled: contextEnabled, files: files, chunks: loadContextChunks().length };
+});
+ipcMain.handle('set-context-enabled', (e, on) => { contextEnabled = !!on; return contextEnabled; });
+ipcMain.handle('preview-context', (e, question) => {
+  contextCache = { at: 0, chunks: [] };   // a preview should never show a stale read of the folder
+  const r = pickContext(String(question || ''));
+  return { chunks: r.chunks.map((c) => ({ file: c.file, score: c.score, hits: c.hits, text: c.text.slice(0, 200) })), chars: r.text.length };
+});
+ipcMain.handle('open-context-dir', () => {
+  const dir = contextDir();
+  try { fs.mkdirSync(dir, { recursive: true }); } catch (e) {}
+  try { require('electron').shell.openPath(dir); } catch (e) {}
+  return dir;
+});
 function promptsDir() { return path.join(app.isPackaged ? process.resourcesPath : __dirname, 'prompts'); }
 ipcMain.handle('get-version', () => app.getVersion());
 // session audio recordings (speaker+mic mix) live in userData\recordings\<id>.webm

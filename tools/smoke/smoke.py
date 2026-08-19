@@ -376,6 +376,53 @@ else:
     code = J("(window.__gptRes||{}).code")
     check('OCR send path reaches the bridge or reports why', code in ('bridge-offline', 'no-bound-tab', 'ocr-failed', 'ocr-self'), code)
 
+print("")
+print("== 13. local context (CV / JD) ==")
+ctx = json.loads(J("cap.getContext().then(c=>JSON.stringify(c))", timeout=20))
+check('context folder reported', bool(ctx.get('dir')), ctx.get('dir'))
+ctx_dir = ctx['dir']
+os.makedirs(ctx_dir, exist_ok=True)
+probe = os.path.join(ctx_dir, '_smoke_probe.txt')
+existing = [f for f in os.listdir(ctx_dir) if f.lower().endswith(('.txt', '.md'))]
+NL2 = chr(10) + chr(10)
+PROBE_TEXT = NL2.join([
+    'I ran the Kubernetes migration for our checkout service, moving twelve deployments off bare EC2 '
+    'and onto EKS with Helm charts and a blue-green rollout.',
+    'Outside work I play bass guitar and mostly listen to film scores, Hans Zimmer especially, and I '
+    'spend weekends on small side projects.',
+    'I rewrote our Postgres access layer to use connection pooling, which cut p99 latency on the '
+    'orders endpoint from 900ms to 120ms under load.',
+]) + chr(10)
+io.open(probe, 'w', encoding='utf-8').write(PROBE_TEXT)
+time.sleep(0.4)
+
+after = json.loads(J("cap.getContext().then(c=>JSON.stringify(c))", timeout=20))
+check('probe file picked up', after.get('chunks', 0) >= len(existing) + 3, after.get('chunks'))
+
+def top_file_text(q):
+    r = json.loads(J("cap.previewContext(" + json.dumps(q) + ").then(x=>JSON.stringify(x))", timeout=20))
+    return (r['chunks'][0]['text'] if r.get('chunks') else ''), r
+
+t1, r1 = top_file_text('How would you deploy this service on Kubernetes?')
+check('question about Kubernetes selects the Kubernetes paragraph', 'Kubernetes' in t1 or 'Helm' in t1, t1[:80])
+
+t2, r2 = top_file_text('What do you do outside of work for fun?')
+check('a hobby question does not pull the Kubernetes paragraph', 'Kubernetes' not in t2, t2[:80])
+
+t3, r3 = top_file_text('Tell me about a database latency problem you fixed.')
+check('a latency question selects the Postgres paragraph', 'Postgres' in t3 or 'latency' in t3, t3[:80])
+
+check('context stays within its char budget', r1.get('chars', 0) <= 1800, r1.get('chars'))
+
+en = J("cap.setContextEnabled(false).then(v=>String(v))", timeout=20)
+check('context can be turned off', en == 'false', en)
+J("cap.setContextEnabled(true)", timeout=20)
+
+os.remove(probe)
+time.sleep(0.3)
+gone = json.loads(J("cap.previewContext('Kubernetes deployment').then(x=>JSON.stringify(x))", timeout=20))
+check('removing the file removes its context', all('Kubernetes migration' not in ch['text'] for ch in gone.get('chunks', [])), gone.get('chars'))
+
 c.close()
 bad = [r for r in results if not r[1]]
 print('')

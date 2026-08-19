@@ -711,6 +711,7 @@ function togglePop(anchor, popId) {
 document.querySelectorAll('[data-pop]').forEach((b) => b.addEventListener('click', (e) => {
   e.stopPropagation();
   if (b.dataset.pop === 'opacityPop' && screen === 'live') window.cap.ensureLiveCaptions();
+  if (b.dataset.pop === 'settingsPop') refreshContextInfo();   // the folder can change while the app runs
   togglePop(b, b.dataset.pop);
 }));
 // A transparent no-drag backdrop covers the window while a popover is open, so a click
@@ -1360,6 +1361,21 @@ if ($('autoQToggle')) {
     try { localStorage.setItem('ca_auto_q', autoQuestion ? '1' : '0'); } catch (e) {}
   });
 }
+// local context: plain .txt/.md files the user drops in userData/context
+async function refreshContextInfo() {
+  if (!window.cap.getContext) return;
+  let c; try { c = await window.cap.getContext(); } catch (e) { return; }
+  const t = $('ctxToggle'); if (t) t.checked = !!c.enabled;
+  const info = $('ctxInfo');
+  if (info) {
+    info.textContent = c.files.length
+      ? (c.files.length + ' file' + (c.files.length === 1 ? '' : 's') + ', ' + c.chunks + ' paragraphs — ' + c.files.map((f) => f.name).join(', '))
+      : 'No documents yet. Put your CV, the job description and round notes in this folder as .txt or .md.';
+  }
+}
+if ($('ctxToggle')) $('ctxToggle').addEventListener('change', () => { try { window.cap.setContextEnabled($('ctxToggle').checked); } catch (e) {} });
+if ($('ctxOpen')) $('ctxOpen').addEventListener('click', async () => { try { await window.cap.openContextDir(); } catch (e) {} setTimeout(refreshContextInfo, 900); });
+refreshContextInfo();
 if ($('consoleToggle')) {
   const applyConsole = () => window.cap.setConsole($('consoleToggle').checked);
   $('consoleToggle').addEventListener('change', applyConsole);
