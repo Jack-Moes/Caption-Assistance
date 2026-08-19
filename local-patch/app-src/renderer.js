@@ -941,13 +941,14 @@ function setAnswerStatus(label, phase) {
 }
 function beginGptAnswer(status) {
   answerRequestId = String(status.requestId || ''); answerSeq = -1; answerText = ''; answerRecovering = false;
-  const out = $('gptAnswerText'); out.textContent = 'Waiting for ChatGPT…'; out.classList.add('empty');
+  const out = $('gptAnswerText'); resetAnswerLayout(); out.textContent = 'Waiting for ChatGPT…'; out.classList.add('empty');
   setAnswerStatus('Queued…', 'waiting');
 }
 function failGptAnswer(message, partialText) {
   answerRecovering = false;
   const rb = $('answerRefreshBtn'); if (rb) rb.classList.remove('recovering');
   const out = $('gptAnswerText');
+  resetAnswerLayout();
   if (partialText) {
     answerText = partialText;
     out.textContent = partialText + '\n\n— ' + (message || 'The response connection was interrupted.');
@@ -957,6 +958,68 @@ function failGptAnswer(message, partialText) {
   }
   setAnswerStatus('Response error', 'error');
   setBusy(false);
+}
+// ---- answer layout ----------------------------------------------------------------------------
+// You have to start talking before you have read the whole thing, so the opening sentence is set
+// apart and enlarged: say that, and you have bought yourself the time to scan the rest. The prompts
+// ask for a closing confirmation question on its own line, so that is split off too instead of
+// disappearing into the paragraph.
+//
+// Streaming still appends to a single text node. Only the lead is separated while text is arriving
+// (once, as soon as the first sentence closes) and the tail is split at the end, so the per-chunk
+// cost stays O(delta) rather than O(answer).
+let answerLead = '';
+let answerFontPx = 15;
+function answerParts() {
+  const out = $('gptAnswerText');
+  let lead = out.querySelector('.ans-lead');
+  if (!lead) {
+    out.textContent = '';
+    lead = document.createElement('div'); lead.className = 'ans-lead';
+    const body = document.createElement('div'); body.className = 'ans-body';
+    const tail = document.createElement('div'); tail.className = 'ans-tail hidden';
+    out.appendChild(lead); out.appendChild(body); out.appendChild(tail);
+  }
+  return { out, lead, body: out.querySelector('.ans-body'), tail: out.querySelector('.ans-tail') };
+}
+function resetAnswerLayout() {
+  answerLead = '';
+  const out = $('gptAnswerText');
+  if (out) out.textContent = '';
+}
+function applyAnswerFont() {
+  const out = $('gptAnswerText');
+  if (out) out.style.fontSize = answerFontPx + 'px';
+  const l = $('ansFontVal'); if (l) l.textContent = answerFontPx + 'px';
+  try { localStorage.setItem('ca_ans_font', String(answerFontPx)); } catch (e) {}
+}
+function renderAnswer(full, isFinal) {
+  const p = answerParts();
+  if (!answerLead) {
+    const m = full.match(/^[\s\S]*?[.!?](?=\s|$)/);
+    if (!m) { p.lead.textContent = full; p.body.textContent = ''; return; }   // still inside sentence one
+    answerLead = m[0].trim();
+  }
+  if (p.lead.textContent !== answerLead) p.lead.textContent = answerLead;
+  let rest = full.slice(answerLead.length).replace(/^\s+/, '');
+  if (isFinal) {
+    // the prompts end with a short confirmation/leading question on its own line
+    const lines = rest.split(/\n+/).map((x) => x.trim()).filter(Boolean);
+    if (lines.length > 1 && /\?\s*$/.test(lines[lines.length - 1]) && lines[lines.length - 1].length <= 220) {
+      p.tail.textContent = lines.pop();
+      p.tail.classList.remove('hidden');
+    }
+    rest = lines.join('\n\n');
+    p.body.textContent = rest;
+    return;
+  }
+  // grow the existing text node when the new text merely extends it
+  const node = p.body.firstChild;
+  if (node && node.nodeType === 3 && p.body.childNodes.length === 1 && rest.startsWith(node.data)) {
+    if (rest.length > node.data.length) node.appendData(rest.slice(node.data.length));
+  } else {
+    p.body.textContent = rest;
+  }
 }
 function receiveGptAnswer(r) {
   if (!r || !r.requestId || r.requestId !== answerRequestId) return;
@@ -971,18 +1034,8 @@ function receiveGptAnswer(r) {
   if (typeof r.text === 'string' && r.text) {
     const out = $('gptAnswerText');
     const follow = out.scrollTop + out.clientHeight >= out.scrollHeight - 32;
-    // Each stream chunk carries the FULL answer so far. Assigning textContent every time destroyed and
-    // rebuilt the whole text node and re-laid out the entire block -- O(n) per chunk on a growing answer,
-    // ~25 times a second. When the new text is a pure extension of what is already rendered, grow the
-    // existing text node instead; fall back to a full replace on regenerate/edit or the first chunk.
-    const node = out.firstChild;
-    const grew = answerText && r.text.length > answerText.length && r.text.startsWith(answerText);
-    if (grew && node && node.nodeType === 3 && out.childNodes.length === 1 && !out.classList.contains('empty')) {
-      node.appendData(r.text.slice(answerText.length));
-    } else {
-      out.textContent = r.text;
-      out.classList.remove('empty');
-    }
+    out.classList.remove('empty');
+    renderAnswer(r.text, r.phase === 'final');
     answerText = r.text;
     if (follow) out.scrollTop = out.scrollHeight;
   }
@@ -1008,6 +1061,10 @@ if ($('answerRefreshBtn')) $('answerRefreshBtn').addEventListener('click', () =>
   setBusy(true, busyBtn || 'gptBtn', 30000);
   if (window.cap.recoverGpt) window.cap.recoverGpt();
 });
+try { const f = parseInt(localStorage.getItem('ca_ans_font') || '', 10); if (f >= 12 && f <= 26) answerFontPx = f; } catch (e) {}
+if ($('ansFontDown')) $('ansFontDown').addEventListener('click', () => { answerFontPx = Math.max(12, answerFontPx - 1); applyAnswerFont(); });
+if ($('ansFontUp')) $('ansFontUp').addEventListener('click', () => { answerFontPx = Math.min(26, answerFontPx + 1); applyAnswerFont(); });
+applyAnswerFont();
 if (window.cap.onGptAnswer) window.cap.onGptAnswer(receiveGptAnswer);
 if (window.cap.onGptStatus) window.cap.onGptStatus((s) => {
   if (!s) return;

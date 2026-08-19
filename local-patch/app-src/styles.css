@@ -113,6 +113,19 @@ body.dark .mic-select option, body.dark .set-mic option { background: #1a252f; c
 .wb-end { align-self: center; height: 30px; padding: 0 12px; margin: 0 3px; border-radius: 8px; }   /* END SESSION pill in the header */
 .wclose:hover { background: var(--red); color: #fff; }
 
+/* Answer panel. The opening sentence is what you have to say first, so it is set apart and heavier:
+   say that and you have bought time to scan the rest. The prompts end with a short confirmation
+   question on its own line, which is split off so it does not vanish into the paragraph. */
+.ans-lead { font-weight: 700; line-height: 1.45; margin-bottom: 9px; }
+.ans-body { white-space: pre-wrap; line-height: 1.6; }
+.ans-tail { margin-top: 11px; padding-top: 9px; border-top: 1px dashed var(--border);
+  font-weight: 600; line-height: 1.5; }
+.ans-tail.hidden { display: none; }
+.answer-font { min-width: 30px; justify-content: center; font-weight: 700; }
+.answer-font-val { font-size: 10px; opacity: .5; min-width: 30px; text-align: center; align-self: center; }
+body.dark .ans-lead { color: #eaf2ff; }
+body.dark .ans-tail { color: #9fd0ff; border-top-color: #2b3b60; }
+
 /* ---------- sidebar ---------- */
 .sidebar { width: 58px; background: var(--panel); display: flex; flex-direction: column;
   align-items: center; padding-top: 14px; gap: 6px; border-right: 1px solid var(--border); }

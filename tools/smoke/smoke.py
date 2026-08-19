@@ -493,6 +493,67 @@ os.remove(probe2)
 rec = json.loads(J("JSON.stringify(window.CATermCorrect.recent(3))"))
 check('recent fixes are recorded for the UI', len(rec) > 0 and 'to' in (rec[0] if rec else {}), rec[:2])
 
+print("")
+print("== 15. answer layout ==")
+check('answer renderer present', bool(J("typeof renderAnswer === 'function' && typeof resetAnswerLayout === 'function'")))
+
+def render(text, final=False):
+    J("renderAnswer(" + json.dumps(text) + ", " + ("true" if final else "false") + ")")
+
+def parts():
+    return json.loads(J("""(function(){var o=document.getElementById('gptAnswerText');
+      var l=o.querySelector('.ans-lead'), b=o.querySelector('.ans-body'), t=o.querySelector('.ans-tail');
+      return JSON.stringify({lead:l?l.textContent:null, body:b?b.textContent:null,
+        tail:t?t.textContent:null, tailShown:t?!t.classList.contains('hidden'):null});})()"""))
+
+# while the first sentence is still arriving there is nothing to set apart yet
+J("resetAnswerLayout()")
+render('So, yeah, I think the key thing')
+p1 = parts()
+check('partial first sentence stays in the lead', p1['lead'] == 'So, yeah, I think the key thing' and not p1['body'], p1)
+
+# once it closes, the opening sentence separates from the rest
+render('So, yeah, I think the key thing is idempotency. We made every consumer safe to retry.')
+p2 = parts()
+check('lead is the opening sentence', p2['lead'] == 'So, yeah, I think the key thing is idempotency.', p2['lead'])
+check('remainder goes to the body', 'every consumer safe to retry' in (p2['body'] or ''), p2['body'])
+
+# streaming must keep appending to the same text node rather than rebuilding it
+node_id = J("(function(){var b=document.querySelector('#gptAnswerText .ans-body');window.__n=b.firstChild;return b.firstChild?b.firstChild.data.length:-1;})()")
+render('So, yeah, I think the key thing is idempotency. We made every consumer safe to retry. That removed the duplicate charges.')
+same = J("(function(){var b=document.querySelector('#gptAnswerText .ans-body');return b.firstChild===window.__n;})()")
+grew = J("(function(){var b=document.querySelector('#gptAnswerText .ans-body');return b.firstChild?b.firstChild.data.length:-1;})()")
+check('body grows in place while streaming', same is True and grew > node_id, 'sameNode=%s len %s->%s' % (same, node_id, grew))
+
+# the closing confirmation question is split out on the final chunk
+NL = chr(10)
+final_text = ('So, yeah, the key thing is idempotency. We made every consumer safe to retry, which removed '
+              'the duplicate charges.' + NL + NL + 'I guess your team must already have a policy on where '
+              'retries are allowed to happen?')
+J("resetAnswerLayout()")
+render(final_text, True)
+p3 = parts()
+check('closing question split into its own block', p3['tailShown'] is True and p3['tail'].endswith('?'), p3['tail'])
+check('closing question removed from the body', 'already have a policy' not in (p3['body'] or ''), p3['body'])
+
+# an answer with no closing question must not lose its last line
+J("resetAnswerLayout()")
+render('First sentence here. Second sentence with no question at the end.', True)
+p4 = parts()
+check('no false split when there is no closing question', p4['tailShown'] is False and 'Second sentence' in (p4['body'] or ''), p4)
+
+# font control
+before = J("(function(){return parseInt(getComputedStyle(document.getElementById('gptAnswerText')).fontSize,10);})()")
+J("document.getElementById('ansFontUp').click()")
+time.sleep(0.3)
+after = J("(function(){return parseInt(getComputedStyle(document.getElementById('gptAnswerText')).fontSize,10);})()")
+check('A+ enlarges the answer text', after == before + 1, '%s -> %s' % (before, after))
+J("document.getElementById('ansFontDown').click()")
+time.sleep(0.3)
+check('size is persisted', J("localStorage.getItem('ca_ans_font')") == str(before), J("localStorage.getItem('ca_ans_font')"))
+
+J("resetAnswerLayout()")
+
 c.close()
 bad = [r for r in results if not r[1]]
 print('')
