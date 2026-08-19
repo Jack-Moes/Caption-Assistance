@@ -73,7 +73,7 @@ If these buttons are missing after an extension update, reload the extension and
 | **bind a tab** | The extension is connected, but no exact ChatGPT tab is selected | Click the chain button in the ChatGPT tab |
 | **no bridge** | The app and extension are not connected | Start the app, reload the extension, then refresh ChatGPT |
 
-The app and extension communicate locally at `127.0.0.1:17632`. The app runs on any network, and no external deployment server is needed.
+The app and extension communicate locally on `127.0.0.1`, using the first free port in the range `17632-17636`. If something else already holds a port the app moves to the next one and the extension follows it, so a port clash no longer breaks the connection. The app runs on any network, and no external deployment server is needed.
 
 ## 4. Recommended first-time workflow
 
@@ -191,6 +191,18 @@ Changing the view does not erase the other source. It only changes what is displ
 - The minimap on the right helps navigate a long transcript.
 - Red marks in the transcript/minimap show previous send positions.
 
+### Latest and question detection
+
+**Latest** does not simply take the last sentence. With **Detect questions** on (Settings, default on) it
+picks the most recent sentence that actually reads as a question, and ignores trailing acknowledgements.
+
+If the interviewer says *"How do you handle database migrations? Yeah, okay, sure."*, Latest selects only
+**"How do you handle database migrations?"**.
+
+Detection runs entirely on this PC with no API key, no internet and no model download. It only decides
+what gets **selected** - it never sends anything on its own. Turn it off in Settings to go back to
+picking the literally last sentence.
+
 ### AutoScroll On at the bottom
 
 This follows new incoming transcript lines. Click it to pause or resume transcript following.
@@ -221,6 +233,22 @@ This is useful when one interview question arrives in several caption fragments.
 Send, aa, ss, and Edit need selected transcript text. If there is no selection, the app blocks the request and shows **Select a question first, or press Latest**. The Latest button is a safe shortcut: it selects but does not automatically send the newest sentence. Confirm the highlighted sentence, then press the action you want.
 
 `aa` and `zz` are just configurable command words. Their exact meaning comes from the prompt that you gave ChatGPT.
+
+### Questions that are not spoken
+
+Two actions exist for questions the microphone can never hear. Both are hotkey-only: assign them in
+Settings, then press the key.
+
+| Action | What it sends |
+|---|---|
+| **Send clipboard** | Whatever is currently on the clipboard - a pasted problem statement, a chat message |
+| **Read screen (OCR)** | The text of the window you are looking at, read with the OCR engine built into Windows |
+
+**Read screen** is aimed at live coding: the problem is on the screen, so no transcript selection can
+ever contain it. Bring the window with the problem to the front, then press the key. It refuses if
+Caption assistance itself is in front, and it reads the front window only - not the whole desktop.
+
+Neither needs an API key or the internet.
 
 ## 11. Answer in app
 
@@ -295,14 +323,22 @@ Keep-on-top does not provide capture protection. Use the Shield menu for privacy
 
 Speaker and microphone can use separate engines.
 
-| Engine | Basic meaning |
-|---|---|
-| **System** | Uses Windows Live Captions for speaker/system speech |
-| **Browser** | Uses Chrome/browser microphone speech recognition |
-| **Local (Vosk)** | Offline local transcription; may need one-time model setup |
-| **Deepgram** | Cloud transcription; requires an API key and internet |
-| **ElevenLabs** | Cloud transcription; requires an API key and internet |
-| **Speechmatics** | Cloud transcription; requires an API key and internet |
+| Engine | Source | Free? | Notes |
+|---|---|---|---|
+| **System** | Speaker | Yes | Windows Live Captions. The default for the interviewer's voice |
+| **Windows speech** | Mic | Yes | The default for your voice. Offline, no Python, no key. Needs one Windows setting - see below |
+| **Browser** | Mic | Yes | Chrome's own recognition, via the extension. Works with mics Windows speech cannot use |
+| **Local (Vosk)** | Both | Yes | Offline. Needs a one-time Python setup, and cannot open the mic on some hardware |
+| **Deepgram** | Both | No | Cloud; API key + internet |
+| **ElevenLabs** | Both | No | Cloud; API key + internet |
+| **Speechmatics** | Both | No | Cloud; API key + internet |
+
+The three free options need no account. Cloud engines are marked **API key** in the dropdown.
+
+**Windows speech needs one OS setting.** Open Windows **Settings > Privacy & security > Speech** and turn
+on **Online speech recognition**. Until you do, Windows blocks all speech recognition and the app will
+say so in the engine line under the dropdowns. If your mic still does not work there, switch the Mic
+engine to **Browser**.
 
 Click **Set up local model (one-time)** when Local asks for setup. For a cloud engine, enter and save the provider API key.
 
@@ -315,9 +351,32 @@ Important privacy distinction: Caption assistance has no external deployment-ver
 - Press Esc to cancel the change.
 - Fresh installations leave Standard-mode Send, `aa`, `zz`, Compact, and Mute hotkeys unassigned (`—`).
 - **Latest sentence** can also be assigned a global hotkey. It selects the newest transcript sentence without sending it.
+- **Send clipboard** and **Read screen (OCR)** are hotkey-only actions; they have no toolbar button.
 - Edit the `aa` and `zz` fields to change those command words.
 - Set a **Compact** URL to open a specific GPT/custom GPT; leave it blank for a new normal chat.
 - Live Coding always reserves F1–F5 for plan, code, improve, edge, and complexity while that mode is active.
+
+### Your documents (CV, job description, notes)
+
+Instead of pasting your background into the prompt, keep it as files and let the app attach only the part
+each question needs.
+
+1. In Settings, click **Open folder**. The app creates it and opens it in Explorer.
+2. Drop in `.txt` or `.md` files - your CV, the job description, notes from earlier rounds.
+3. Separate topics with a **blank line**. Each block between blank lines is matched on its own.
+
+When you send a question, the app scores those blocks against it and attaches the best few (at most 4
+blocks / 1800 characters) after the question. A Kubernetes question pulls your Kubernetes paragraph; a
+question about hobbies pulls the paragraph about hobbies.
+
+Settings shows how many files and paragraphs were found. **Use my documents** turns the whole thing off.
+
+This runs entirely on this PC: no upload, no embeddings, no account. The attached text does go to ChatGPT
+along with the question, exactly like the rest of the message.
+
+### Detect questions
+
+On by default. Changes what **Latest** selects - see section 9. No network, no key.
 
 ### Debug tools
 
@@ -350,9 +409,12 @@ The recording mixes the available system audio and selected microphone. If recor
 - Sessions, transcripts, prompt edits, settings, and recordings are stored locally on this PC.
 - Deleting a saved session permanently removes its transcript and recording from this PC.
 - The app does not send the PC name, Windows username, local IP, or distribution ID to an external verification server.
-- The app-extension bridge uses only `127.0.0.1:17632` on this PC.
+- The app-extension bridge uses only `127.0.0.1`, ports `17632-17636`, on this PC.
 - The app runs on any network; there is no subnet restriction.
-- ChatGPT features use ChatGPT's internet service.
+- Your documents folder, question detection and screen OCR all run on this PC only. Nothing is uploaded by those features.
+- ChatGPT features use ChatGPT's internet service. Anything you send - a selected question, the clipboard, OCR text, and the document blocks attached to it - goes to ChatGPT along with it.
+- Windows speech recognition is a Microsoft service; Windows requires you to accept its speech privacy policy before it will run at all.
+- Chrome speech (the Browser mic engine) sends audio to the browser's speech service while it is active.
 - Cloud transcription sends audio to the cloud provider you explicitly select.
 
 ## 18. Common problems
@@ -394,6 +456,32 @@ Open the ChatGPT tab you want to use and click the floating chain button.
 - Reload the extension and refresh ChatGPT if needed.
 - Avoid repeatedly pressing Send.
 
+### My voice is not transcribed
+
+The Mic engine is **Windows speech** by default, and Windows blocks speech recognition until you accept
+it once. Open **Settings > Privacy & security > Speech** and turn on **Online speech recognition**. The
+engine line under the Settings dropdowns states this explicitly when it is the cause.
+
+If it still does not work, that microphone may not be usable by the Windows engine. Switch the Mic engine
+to **Browser** (needs the extension and a bound tab).
+
+The interviewer's side is a separate engine (**System**, Windows Live Captions) and is unaffected.
+
+### The app warns that the page layout was not recognised
+
+The app checks the bound page when you bind it and reports which controls it found. This warning means
+the site's markup changed, or you bound a site the app does not have a tested adapter for. chatgpt.com is
+the tested one. Reload the extension on `chrome://extensions`, press F5 on the page, and bind again.
+
+Sending will probably fail while this warning is showing, so treat it as a real error, not a hint.
+
+### Read screen (OCR) finds no text
+
+- Bring the window you want to read to the **front** first. The action refuses while Caption assistance
+  itself is focused, and it only reads the front window.
+- It reads text, not pictures of handwriting or heavily stylised graphics.
+- Very small or very low-contrast text may not be recognised; zoom the page in and try again.
+
 ### Privacy made the window hard to control
 
 - Press `Ctrl+Shift+X`.
@@ -414,6 +502,15 @@ Open the ChatGPT tab you want to use and click the floating chain button.
 | `Run-Caption assistance-Local.cmd` | Normal launcher |
 | `Run-Caption assistance-Safe.cmd` | Privacy-recovery launcher |
 | `RUN_INSTRUCTIONS.txt` | Short installation/start notes |
+| `CHANGELOG.md` | What changed in each release |
+| `tools/smoke` | Automated checks that drive the app; not needed for daily use |
+
+Your own data lives outside this folder, under `%APPDATA%/Caption assistance`:
+
+| Folder | Contents |
+|---|---|
+| `context` | Your CV / job description / notes, used by **Use my documents** |
+| `recordings` | Session audio |
 
 ## 20. One-minute daily checklist
 
@@ -421,7 +518,8 @@ Open the ChatGPT tab you want to use and click the floating chain button.
 2. Open the prepared ChatGPT conversation.
 3. Confirm **linked**; bind the tab if needed.
 4. Choose the correct interview mode and microphone.
-5. Start the session and confirm the correct transcript source.
-6. Select a question and press the appropriate action.
-7. If using Answer in app, use Refresh once if monitoring is interrupted.
-8. Stop and save the session when finished.
+5. Check the engine line in Settings shows no error (Windows speech needs **Online speech recognition** on).
+6. Start the session and confirm the correct transcript source.
+7. Select a question and press the appropriate action - or **Latest** first, which picks out the question for you.
+8. If using Answer in app, use Refresh once if monitoring is interrupted.
+9. Stop and save the session when finished.
