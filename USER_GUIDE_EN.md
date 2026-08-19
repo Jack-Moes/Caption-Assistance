@@ -1,6 +1,6 @@
 # Caption assistance — Easy User Guide (English)
 
-Version 1.0.2 · Haru Mikage · Japan · 2026.8.15
+Version 1.1.0 · Haru Mikage · Japan · 2026.8.19
 
 ## 1. What is this program?
 

@@ -82,7 +82,8 @@ J = c.js
 print('\n== 1. startup / home ==')
 check('home screen visible', J("[...document.querySelectorAll('.screen')].filter(e=>!e.classList.contains('hidden')).map(e=>e.id).join(',')") == 'home')
 check('preload API exposed', J("Object.keys(window.cap||{}).length") >= 57)
-check('version rendered', 'v1.0.2' in (J("(document.getElementById('homeVer')||{}).textContent") or ''))
+APP_VERSION = J("cap.getVersion().then(v=>v)", timeout=20)
+check('version rendered matches the app', ('v' + str(APP_VERSION)) in (J("(document.getElementById('homeVer')||{}).textContent") or ''), APP_VERSION)
 check('bridge reachable on a fallback-range port', bool(BASE), BASE)
 check('ping reports its own port', PING and PING.get('port') in PORTS, PING)
 

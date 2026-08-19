@@ -1051,7 +1051,7 @@ setInterval(updateConn, 1500);
   if (window.cap.getPrivacy) window.cap.getPrivacy().then(renderPrivacy).catch(() => renderPrivacy());
   renderAnswerMode();
   if (window.cap.setAnswerInApp) window.cap.setAnswerInApp(answerInApp);
-  if (window.cap.getVersion) window.cap.getVersion().then((v) => { const e = $('homeVer'); if (e) e.textContent = 'v' + v + ' · Haru Mikage · Japan · 2026.8.15'; }).catch(() => {});
+  if (window.cap.getVersion) window.cap.getVersion().then((v) => { const e = $('homeVer'); if (e) e.textContent = 'v' + v + ' · Haru Mikage · Japan · 2026.8.19'; }).catch(() => {});
 })();
 
 // ================= nav / buttons =================
